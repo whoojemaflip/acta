@@ -1,0 +1,9 @@
+class CreateActaEvents < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
+  def up
+    Acta::Schema.install(connection)
+  end
+
+  def down
+    drop_table :events
+  end
+end

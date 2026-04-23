@@ -1,0 +1,294 @@
+# Acta
+
+Lightweight event-driven and event-sourced primitives for Rails.
+
+## What it is
+
+A small, opinionated set of primitives for Rails applications that want an
+audit log, an event-driven architecture, or event sourcing — without taking
+on a heavyweight framework. Apps compose the primitives à la carte:
+
+- Plain event-driven with a persistent audit log
+- Event-sourced aggregates with readonly projections
+- Hybrid — some aggregates event-sourced, others conventional
+
+What the library ships:
+
+| Primitive | Role |
+|---|---|
+| `Acta::Event` | ActiveModel-backed event classes with typed payloads |
+| `Acta::Handler` | Base primitive — "on event X, run this" |
+| `Acta::Projection` | Sync + transactional + replayable (for ES aggregates) |
+| `Acta::Reactor` | After-commit + async via ActiveJob (for side effects) |
+| `Acta::Command` | Recommended write path with param validation & optimistic concurrency |
+| `Acta::Testing` | RSpec matchers, given-when-then DSL, replay-determinism assertions |
+
+Adapters: SQLite and Postgres, both first-class.
+
+## Installation
+
+Not published to RubyGems. Install from git:
+
+```ruby
+# Gemfile
+gem "acta", git: "https://github.com/whoojemaflip/acta.git"
+```
+
+Requires Rails 8.1+ and Ruby 3.4+.
+
+Generate the events table migration:
+
+```bash
+bin/rails generate acta:install
+bin/rails db:migrate
+```
+
+## Usage
+
+### 1. Define an event
+
+```ruby
+# app/events/order_placed.rb
+class OrderPlaced < Acta::Event
+  stream :order, key: :order_id
+
+  attribute :order_id, :string
+  attribute :customer_id, :string
+  attribute :total_cents, :integer
+
+  validates :order_id, :customer_id, :total_cents, presence: true
+end
+```
+
+### 2. Emit it
+
+Set the actor once at the request boundary:
+
+```ruby
+# ApplicationController
+before_action do
+  Acta::Current.actor = Acta::Actor.new(
+    type: "user",
+    id: current_user.id,
+    source: "web"
+  )
+end
+
+# somewhere in your code
+Acta.emit(OrderPlaced.new(order_id: "o_1", customer_id: "c_1", total_cents: 4200))
+```
+
+That's the minimum viable Acta app — you now have an append-only audit log
+keyed by actor (who) and source (through what surface). Actor types and
+sources are open strings; pick the vocabulary that fits your app.
+
+### 3. React to events (event-driven)
+
+For side effects that should happen after each event is durably written:
+
+```ruby
+# app/reactors/confirmation_email_reactor.rb
+class ConfirmationEmailReactor < Acta::Reactor
+  on OrderPlaced do |event|
+    OrderMailer.confirmation(event.order_id).deliver_later
+  end
+end
+```
+
+Reactors run after-commit and default to async via ActiveJob. Use `sync!`
+to run in the caller's thread (mostly useful for tests).
+
+### 4. Project state (event-sourced)
+
+For aggregates where the event log is the source of truth and AR tables
+are a derived view:
+
+```ruby
+# app/projections/order_projection.rb
+class OrderProjection < Acta::Projection
+  def self.truncate!
+    Order.delete_all
+  end
+
+  on OrderPlaced do |event|
+    Order.create!(
+      id: event.order_id,
+      customer_id: event.customer_id,
+      total_cents: event.total_cents,
+      status: "placed"
+    )
+  end
+
+  on OrderShipped do |event|
+    Order.find(event.order_id).update!(status: "shipped", shipped_at: event.occurred_at)
+  end
+end
+```
+
+Projections run synchronously inside the emit transaction. If they raise,
+the entire emit rolls back — the event row isn't written, reactors don't
+fire, base handlers don't fire.
+
+Replay at any time:
+
+```ruby
+Acta.rebuild!
+```
+
+Each projection's `truncate!` runs, then the log is replayed through
+projections. Reactors are skipped during replay (replay is a state
+operation, not a notification one).
+
+### 5. Commands for validated writes
+
+```ruby
+# app/commands/place_order.rb
+class PlaceOrder < Acta::Command
+  stream :order, key: :order_id
+  expected_sequence :loaded
+
+  param :order_id, :string
+  param :customer_id, :string
+  param :total_cents, :integer
+
+  validates :order_id, :customer_id, :total_cents, presence: true
+  validates :total_cents, numericality: { greater_than: 0 }
+
+  def call
+    emit OrderPlaced.new(order_id:, customer_id:, total_cents:)
+  end
+end
+
+PlaceOrder.call(order_id: "o_1", customer_id: "c_1", total_cents: 4200)
+```
+
+`expected_sequence :loaded` captures the stream's current sequence at
+command instantiation and asserts the stream hasn't moved at emit time.
+Another writer advancing the stream in between raises
+`Acta::ConcurrencyConflict` — the caller can retry with fresh state or
+surface the collision to the user.
+
+## Event payloads with nested models
+
+Payloads can carry arbitrary nested structures — either payload-only
+`Acta::Model` classes or ActiveRecord classes that include
+`Acta::Serializable`.
+
+```ruby
+# payload-only class
+class LineItem < Acta::Model
+  attribute :sku, :string
+  attribute :quantity, :integer
+  attribute :price_cents, :integer
+end
+
+# existing AR class — opt in as a payload type
+class Address < ApplicationRecord
+  include Acta::Serializable
+  acta_serialize except: [:created_at, :updated_at]
+end
+
+class OrderSubmitted < Acta::Event
+  stream :order, key: :order_id
+
+  attribute :order_id, :string
+  attribute :shipping_address, Address       # AR + Serializable
+  attribute :items, array_of: LineItem       # Array<Acta::Model>
+  attribute :tags, array_of: String
+end
+```
+
+When embedded, AR instances are **snapshots**: `event.shipping_address.street`
+returns the value at emit time, regardless of later changes. For the
+current row, call `Address.find(event.shipping_address.id)`.
+
+## Testing
+
+```ruby
+# spec_helper.rb (or equivalent)
+require "acta/testing"
+require "acta/testing/matchers"
+
+RSpec.configure do |config|
+  config.around(:each, :active_record) do |example|
+    Acta::Testing.test_mode { example.run }
+  end
+end
+```
+
+### RSpec matchers
+
+```ruby
+expect { PlaceOrder.call(order_id: "o_1", customer_id: "c_1", total_cents: 4200) }
+  .to emit(OrderPlaced).with(total_cents: 4200)
+
+expect { some_noop }.not_to emit_any_events
+
+expect { batched_import }
+  .to emit_events([OrderPlaced, OrderPlaced, OrderPlaced])
+```
+
+### Given/when/then DSL
+
+```ruby
+include Acta::Testing::DSL
+
+it "ships an order" do
+  given_events do
+    Acta.emit(OrderPlaced.new(order_id: "o_1", customer_id: "c_1", total_cents: 4200))
+  end
+
+  when_command ShipOrder.new(order_id: "o_1", tracking: "TRK123")
+
+  then_emitted OrderShipped, order_id: "o_1"
+  then_emitted_nothing_else
+end
+```
+
+Fixtures become narratives — prior state is declared as events, which
+mirrors how state actually accumulates in an event-sourced system.
+
+### Replay determinism check
+
+```ruby
+it "projects deterministically" do
+  # ... emit some events ...
+  ensure_replay_deterministic { Order.all.pluck(:id, :status) }
+end
+```
+
+Catches the common projection bugs (Time.current, rand, external API
+calls) better than code review ever will.
+
+## Observability
+
+Hook into `ActiveSupport::Notifications` for metrics, tracing, and
+request correlation:
+
+- `acta.event_emitted` — `{ event, event_type }`
+- `acta.projection_applied` — `{ event, projection_class }`
+- `acta.reactor_invoked` — `{ event, reactor_class, sync: true }`
+- `acta.reactor_enqueued` — `{ event, reactor_class }`
+
+## Development
+
+```bash
+bin/setup                  # install dependencies
+bundle exec rspec          # run the test suite (SQLite + Postgres if available)
+bundle exec rake           # tests + rubocop
+```
+
+The Postgres adapter tests run if a local Postgres instance is reachable.
+Configure via environment variables:
+
+```
+ACTA_PG_DATABASE=acta_test
+ACTA_PG_HOST=localhost
+ACTA_PG_PORT=5432
+ACTA_PG_USER=$USER
+ACTA_PG_PASSWORD=
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
