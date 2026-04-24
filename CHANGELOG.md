@@ -10,6 +10,19 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Added
+
+- `Acta::Command` — new `emits EventClass` class-method DSL. The command
+  inherits `stream_type` and `stream_key_attribute` from the declared
+  event class, eliminating the duplicate `stream :order, key: :order_id`
+  declaration in the common case where a command emits a single event
+  for its aggregate. Explicit `stream` on the command still works and
+  takes precedence when both are given (useful when the command operates
+  on a different aggregate than its emitted event, or doesn't emit an
+  Acta event at all).
+
 ## [0.1.0]
 
 Feature-complete per the initial implementation plan (M0–M10). Next step

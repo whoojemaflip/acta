@@ -9,21 +9,54 @@ module Acta
         new(**params).call
       end
 
+      # Declare the aggregate this command operates on. Two forms:
+      #
+      #   stream :order, key: :order_id       # explicit declaration
+      #   emits OrderPlaced                    # inherit from the event class
+      #
+      # When both are given, the explicit `stream` takes precedence.
       def stream(type, key:)
         @stream_type = type.to_s
         @stream_key_attribute = key
+      end
+
+      # Declare the primary event class this command emits. The command
+      # inherits stream_type and stream_key_attribute from that event,
+      # removing the duplicate declaration in the common case:
+      #
+      #   class OrderRenamed < Acta::Event
+      #     stream :order, key: :order_id
+      #     # ...
+      #   end
+      #
+      #   class RenameOrder < Acta::Command
+      #     emits OrderRenamed
+      #     on_concurrent_write :raise
+      #     # ...
+      #   end
+      def emits(event_class)
+        unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
+          raise ArgumentError,
+                "emits expects a class with stream_type and stream_key_attribute (typically an Acta::Event subclass)"
+        end
+
+        @emitted_event_class = event_class
+      end
+
+      attr_reader :emitted_event_class, :concurrent_write_action
+
+      def stream_type
+        @stream_type || @emitted_event_class&.stream_type
+      end
+
+      def stream_key_attribute
+        @stream_key_attribute || @emitted_event_class&.stream_key_attribute
       end
 
       # Declare how the command handles concurrent writes to its stream.
       #
       #   on_concurrent_write :raise   # capture sequence, raise ConcurrencyConflict on drift
       #   on_concurrent_write :ignore  # explicit opt-out — write unconditionally
-      #
-      # :raise captures the stream's current sequence at instantiation and
-      # asserts it hasn't moved by the time emit runs. :ignore is the same
-      # runtime behaviour as omitting the declaration entirely, but it
-      # documents intent: the command's author considered concurrency on
-      # this aggregate and decided last-write-wins is acceptable.
       VALID_CONCURRENT_WRITE_ACTIONS = %i[ raise ignore ].freeze
 
       def on_concurrent_write(action)
@@ -34,8 +67,6 @@ module Acta
 
         @concurrent_write_action = action
       end
-
-      attr_reader :stream_type, :stream_key_attribute, :concurrent_write_action
     end
 
     def initialize(**params)
@@ -65,7 +96,7 @@ module Acta
     def capture_stream_sequence!
       if stream_type.nil? || stream_key.nil?
         raise ConfigurationError,
-              "on_concurrent_write on #{self.class} requires a stream declaration with a present key"
+              "on_concurrent_write on #{self.class} requires a stream declaration (via `stream` or `emits`) with a present key"
       end
 
       @captured_sequence = Record

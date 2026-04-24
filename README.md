@@ -144,7 +144,7 @@ operation, not a notification one).
 ```ruby
 # app/commands/place_order.rb
 class PlaceOrder < Acta::Command
-  stream :order, key: :order_id
+  emits OrderPlaced
   on_concurrent_write :raise
 
   param :order_id, :string
@@ -161,6 +161,13 @@ end
 
 PlaceOrder.call(order_id: "o_1", customer_id: "c_1", total_cents: 4200)
 ```
+
+`emits OrderPlaced` derives the command's `stream_type` and
+`stream_key_attribute` from the event class's own declaration — no
+duplicate `stream :order, key: :order_id` on the command. Use the
+explicit `stream :order, key: :order_id` form instead if the command
+operates on a different aggregate than its primary event, or if it
+doesn't emit an Acta event.
 
 `on_concurrent_write :raise` captures the stream's current sequence at
 command instantiation and asserts the stream hasn't moved by emit time.
