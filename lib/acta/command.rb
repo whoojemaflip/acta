@@ -16,15 +16,23 @@ module Acta
 
       # Declare how the command handles concurrent writes to its stream.
       #
-      #   on_concurrent_write :raise  # raise Acta::ConcurrencyConflict
+      #   on_concurrent_write :raise   # capture sequence, raise ConcurrencyConflict on drift
+      #   on_concurrent_write :ignore  # explicit opt-out — write unconditionally
       #
-      # When enabled, the command captures the stream's current sequence at
-      # instantiation time and asserts the stream hasn't moved by the time
-      # emit runs. If it has, the configured action fires.
-      def on_concurrent_write(action)
-        raise ArgumentError, "only :raise is currently supported" unless action == :raise
+      # :raise captures the stream's current sequence at instantiation and
+      # asserts it hasn't moved by the time emit runs. :ignore is the same
+      # runtime behaviour as omitting the declaration entirely, but it
+      # documents intent: the command's author considered concurrency on
+      # this aggregate and decided last-write-wins is acceptable.
+      VALID_CONCURRENT_WRITE_ACTIONS = %i[ raise ignore ].freeze
 
-        @concurrent_write_action = :raise
+      def on_concurrent_write(action)
+        unless VALID_CONCURRENT_WRITE_ACTIONS.include?(action)
+          raise ArgumentError,
+                "on_concurrent_write must be one of #{VALID_CONCURRENT_WRITE_ACTIONS.inspect}, got #{action.inspect}"
+        end
+
+        @concurrent_write_action = action
       end
 
       attr_reader :stream_type, :stream_key_attribute, :concurrent_write_action

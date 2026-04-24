@@ -110,6 +110,48 @@ RSpec.describe "Acta::Command with streams", :active_record do
     end
   end
 
+  describe "on_concurrent_write :ignore" do
+    let(:ignoring_command_class) do
+      klass = Class.new(Acta::Command) do
+        stream :book, key: :book_id
+        on_concurrent_write :ignore
+
+        param :book_id, :string
+        param :new_name, :string
+        validates :book_id, :new_name, presence: true
+
+        def call
+          emit BookRenamed.new(book_id:, new_name:)
+        end
+      end
+      stub_const("IgnoringRenameBook", klass)
+      klass
+    end
+
+    it "emits successfully even when the stream has advanced between instantiation and call" do
+      Acta.emit(event_class.new(book_id: "w_1", new_name: "First"))
+
+      cmd = ignoring_command_class.new(book_id: "w_1", new_name: "Second")
+
+      Acta.emit(event_class.new(book_id: "w_1", new_name: "Interloper"))
+
+      expect { cmd.call }.not_to raise_error
+      expect(Acta.events.count).to eq(3)
+    end
+
+    it "does not require stream_key to be present at instantiation" do
+      klass = Class.new(Acta::Command) do
+        stream :book, key: :book_id
+        on_concurrent_write :ignore
+
+        param :book_id, :string
+      end
+      stub_const("NoKeyIgnoreCommand", klass)
+
+      expect { klass.new(book_id: nil) }.not_to raise_error
+    end
+  end
+
   describe "commands without on_concurrent_write" do
     let(:plain_command_class) do
       klass = Class.new(Acta::Command) do

@@ -28,8 +28,8 @@ v1.0.0.
 - `Acta::Reactor < Acta::Handler` — after-commit + async via ActiveJob
   (default) or `sync!` opt-in. Skipped during replay.
 - `Acta::Command < Acta::Model` — param validation, `stream` declaration,
-  `on_concurrent_write :raise` optimistic concurrency. Raises
-  `InvalidCommand` on param validation failure.
+  `on_concurrent_write :raise` / `:ignore` optimistic-concurrency DSL.
+  Raises `InvalidCommand` on param validation failure.
 - `Acta::Actor` value object — type, id, source, metadata.
 - `Acta::Current` — `ActiveSupport::CurrentAttributes` with an `actor`
   attribute, propagates through ActiveJob.

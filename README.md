@@ -168,6 +168,12 @@ If another writer has appended to the stream in between, the command
 raises `Acta::ConcurrencyConflict` — callers retry with fresh state or
 surface the collision to the user instead of silently clobbering it.
 
+`on_concurrent_write :ignore` is the explicit opt-out: same runtime
+behaviour as omitting the declaration entirely (write unconditionally,
+last-write-wins), but makes the intent legible. Use it when concurrent
+writes to this aggregate are expected and acceptable — the declaration
+tells reviewers "I thought about concurrency here, it's fine."
+
 ## Event payloads with nested models
 
 Payloads can carry arbitrary nested structures — either payload-only
