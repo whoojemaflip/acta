@@ -147,19 +147,19 @@ class PlaceOrder < Acta::Command
   emits OrderPlaced
   on_concurrent_write :raise
 
-  param :order_id, :string
   param :customer_id, :string
   param :total_cents, :integer
 
-  validates :order_id, :customer_id, :total_cents, presence: true
+  validates :customer_id, :total_cents, presence: true
   validates :total_cents, numericality: { greater_than: 0 }
 
   def call
+    order_id = "order_#{SecureRandom.uuid}"
     emit OrderPlaced.new(order_id:, customer_id:, total_cents:)
   end
 end
 
-PlaceOrder.call(order_id: "o_1", customer_id: "c_1", total_cents: 4200)
+PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
 ```
 
 `emits OrderPlaced` derives the command's `stream_type` and
@@ -180,6 +180,68 @@ behaviour as omitting the declaration entirely (write unconditionally,
 last-write-wins), but makes the intent legible. Use it when concurrent
 writes to this aggregate are expected and acceptable — the declaration
 tells reviewers "I thought about concurrency here, it's fine."
+
+## Identity: generate IDs in commands, never in projections
+
+For event-sourced aggregates, aggregate IDs (typically UUIDs) must be
+stable across `Acta.rebuild!` and must not drift if the projected tables
+are truncated. The rule: **the command generates the ID once, the event
+carries it in its payload, and the projection reads it back out**.
+
+```ruby
+class CreateOrder < Acta::Command
+  emits OrderCreated
+
+  param :customer_id, :string
+  param :total_cents, :integer
+
+  def call
+    order_id = "order_#{SecureRandom.uuid}"    # generated here, once, forever
+    emit OrderCreated.new(order_id:, customer_id:, total_cents:)
+  end
+end
+
+class OrderCreated < Acta::Event
+  stream :order, key: :order_id
+  attribute :order_id, :string
+  attribute :customer_id, :string
+  attribute :total_cents, :integer
+end
+
+class OrderProjection < Acta::Projection
+  on OrderCreated do |event|
+    Order.insert!(id: event.order_id, customer_id: event.customer_id, ...)
+  end
+end
+```
+
+When `Acta.rebuild!` runs, it calls `OrderProjection.truncate!` (wiping
+the `orders` table) and replays every event. The projection reads
+`event.order_id` — which was written at the original command call — and
+re-inserts the row with the same ID. **Rebuild never regenerates IDs.**
+
+### What to avoid
+
+- **Generating IDs in projection code.** Non-deterministic — every
+  rebuild produces new IDs, orphaning any foreign references.
+  `SecureRandom` / `Time.current` / anything stateful has no place in a
+  projection.
+- **Generating IDs in the event class's `initialize`.** Same problem:
+  if the event assigns a default ID when reconstructed from a row, old
+  events would decode with fresh IDs. Events should take an explicit
+  `order_id:` attribute and require it in the payload.
+- **Dropping the events table.** The event log is the primary source
+  of IDs. Purging it regenerates all IDs on next write. Back it up and
+  treat it as production-critical — even more so if other systems (a
+  separate user DB, external services) reference your aggregates' IDs.
+
+### Why this matters
+
+If anything outside the event-sourced aggregate references an ID —
+`ratings.wine_id` in a separate user database, a webhook payload sent to
+a third party, a URL that users have bookmarked — that reference must
+stay valid across rebuilds. Keeping IDs in the event payload guarantees
+it without any special deterministic-UUID schemes.
 
 ## Event payloads with nested models
 
