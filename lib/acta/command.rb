@@ -14,20 +14,27 @@ module Acta
         @stream_key_attribute = key
       end
 
-      def expected_sequence(mode)
-        raise ArgumentError, "only :loaded is currently supported" unless mode == :loaded
+      # Declare how the command handles concurrent writes to its stream.
+      #
+      #   on_concurrent_write :raise  # raise Acta::ConcurrencyConflict
+      #
+      # When enabled, the command captures the stream's current sequence at
+      # instantiation time and asserts the stream hasn't moved by the time
+      # emit runs. If it has, the configured action fires.
+      def on_concurrent_write(action)
+        raise ArgumentError, "only :raise is currently supported" unless action == :raise
 
-        @expected_sequence_mode = :loaded
+        @concurrent_write_action = :raise
       end
 
-      attr_reader :stream_type, :stream_key_attribute, :expected_sequence_mode
+      attr_reader :stream_type, :stream_key_attribute, :concurrent_write_action
     end
 
     def initialize(**params)
       super
       raise InvalidCommand, self unless valid?
 
-      capture_expected_sequence! if self.class.expected_sequence_mode == :loaded
+      capture_stream_sequence! if self.class.concurrent_write_action == :raise
     end
 
     def stream_type
@@ -42,18 +49,18 @@ module Acta
     end
 
     def emit(event)
-      Acta.emit(event, expected_sequence: @expected_sequence)
+      Acta.emit(event, expected_sequence: @captured_sequence)
     end
 
     private
 
-    def capture_expected_sequence!
+    def capture_stream_sequence!
       if stream_type.nil? || stream_key.nil?
         raise ConfigurationError,
-              "expected_sequence :loaded on #{self.class} requires stream declaration with a present key"
+              "on_concurrent_write on #{self.class} requires a stream declaration with a present key"
       end
 
-      @expected_sequence = Record
+      @captured_sequence = Record
                              .where(stream_type:, stream_key:)
                              .maximum(:stream_sequence) || 0
     end

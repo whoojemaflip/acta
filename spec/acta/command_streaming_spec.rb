@@ -17,7 +17,7 @@ RSpec.describe "Acta::Command with streams", :active_record do
   let(:command_class) do
     klass = Class.new(Acta::Command) do
       stream :book, key: :book_id
-      expected_sequence :loaded
+      on_concurrent_write :raise
 
       param :book_id, :string
       param :new_name, :string
@@ -59,7 +59,7 @@ RSpec.describe "Acta::Command with streams", :active_record do
     end
   end
 
-  describe "expected_sequence :loaded" do
+  describe "on_concurrent_write :raise" do
     it "emits successfully when no one else is writing to the stream" do
       expect {
         command_class.call(book_id: "w_1", new_name: "Foo")
@@ -79,7 +79,7 @@ RSpec.describe "Acta::Command with streams", :active_record do
     it "raises ConcurrencyConflict when another writer advances the stream after instantiation" do
       Acta.emit(event_class.new(book_id: "w_1", new_name: "First"))
 
-      # Capture expected sequence at instantiation (sequence 1)
+      # Capture stream sequence at instantiation (sequence 1)
       cmd = command_class.new(book_id: "w_1", new_name: "Second")
 
       # Another writer advances the stream
@@ -91,7 +91,7 @@ RSpec.describe "Acta::Command with streams", :active_record do
     it "raises ConfigurationError if stream_key is missing at instantiation" do
       klass = Class.new(Acta::Command) do
         stream :book, key: :book_id
-        expected_sequence :loaded
+        on_concurrent_write :raise
 
         param :book_id, :string
         # no validation — book_id can be nil
@@ -103,14 +103,14 @@ RSpec.describe "Acta::Command with streams", :active_record do
       }.to raise_error(Acta::ConfigurationError, /stream declaration/)
     end
 
-    it "raises ArgumentError for unsupported modes" do
+    it "raises ArgumentError for unsupported actions" do
       expect {
-        Class.new(Acta::Command) { expected_sequence :something_else }
-      }.to raise_error(ArgumentError, /:loaded/)
+        Class.new(Acta::Command) { on_concurrent_write :something_else }
+      }.to raise_error(ArgumentError, /:raise/)
     end
   end
 
-  describe "commands without expected_sequence" do
+  describe "commands without on_concurrent_write" do
     let(:plain_command_class) do
       klass = Class.new(Acta::Command) do
         param :book_id, :string
@@ -130,7 +130,7 @@ RSpec.describe "Acta::Command with streams", :active_record do
       Acta.emit(event_class.new(book_id: "w_1", new_name: "First"))
       Acta.emit(event_class.new(book_id: "w_1", new_name: "Second"))
 
-      # Plain command doesn't capture expected sequence
+      # Plain command doesn't capture stream sequence — no conflict check
       expect {
         plain_command_class.call(book_id: "w_1", new_name: "Third")
       }.not_to raise_error

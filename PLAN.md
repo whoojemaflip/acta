@@ -59,7 +59,7 @@ Gem skeleton, RSpec, rubocop-rails-omakase, CI, README, LICENSE, CHANGELOG,
 2. Sequence calculation in SQLite adapter (BEGIN IMMEDIATE + SELECT MAX).
 3. `ConcurrencyConflict` on unique-index violation.
 4. Stream-scoped query — `Acta.events.for_stream(type:, key:)`.
-5. `expected_sequence :loaded` machinery (wires into M6 commands).
+5. `on_concurrent_write :raise` machinery (wires into M6 commands).
 
 ### M3 — Handlers & dispatch ✅
 
@@ -88,7 +88,7 @@ Gem skeleton, RSpec, rubocop-rails-omakase, CI, README, LICENSE, CHANGELOG,
 
 1. `Acta::Command < Acta::Model` — param validation via AM::Attributes.
 2. `stream :order, key: :order_id` on command — declares aggregate identity.
-3. `expected_sequence :loaded` — captures stream sequence at load.
+3. `on_concurrent_write :raise` — captures stream sequence at instantiation.
 4. `.call(**params)` entry; `emit event` as instance method;
    `InvalidCommand` on validation failure.
 5. Auto-loading from `app/commands/`.

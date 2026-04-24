@@ -145,7 +145,7 @@ operation, not a notification one).
 # app/commands/place_order.rb
 class PlaceOrder < Acta::Command
   stream :order, key: :order_id
-  expected_sequence :loaded
+  on_concurrent_write :raise
 
   param :order_id, :string
   param :customer_id, :string
@@ -162,11 +162,11 @@ end
 PlaceOrder.call(order_id: "o_1", customer_id: "c_1", total_cents: 4200)
 ```
 
-`expected_sequence :loaded` captures the stream's current sequence at
-command instantiation and asserts the stream hasn't moved at emit time.
-Another writer advancing the stream in between raises
-`Acta::ConcurrencyConflict` — the caller can retry with fresh state or
-surface the collision to the user.
+`on_concurrent_write :raise` captures the stream's current sequence at
+command instantiation and asserts the stream hasn't moved by emit time.
+If another writer has appended to the stream in between, the command
+raises `Acta::ConcurrencyConflict` — callers retry with fresh state or
+surface the collision to the user instead of silently clobbering it.
 
 ## Event payloads with nested models
 
