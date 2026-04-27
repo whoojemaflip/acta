@@ -12,6 +12,16 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Added
 
+- `Acta::Projection.truncates(*ar_classes)` — class macro for declaring
+  the AR classes a projection owns. Used both as the default `truncate!`
+  target list (`delete_all` on each in declared order) and as input to
+  `Acta.rebuild!`'s cross-projection ordering: projections whose tables
+  are FK-referenced by another projection's tables now run first, so
+  children are deleted before their parents — independent of registration
+  order. Cycles raise `Acta::TruncateOrderError`. Projections without
+  `truncates` declarations keep their existing registration-order
+  behavior. Closes #3.
+
 - `Acta::Testing.default_actor!(config, **attrs)` — RSpec configuration
   helper that sets `Acta::Current.actor` before every example and resets
   it after, eliminating the per-spec boilerplate and the easy-to-forget

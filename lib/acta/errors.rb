@@ -71,4 +71,17 @@ module Acta
       super("Replay failed on event id=#{record.id} uuid=#{record.uuid} (#{record.event_type}): #{original.message}")
     end
   end
+
+  class TruncateOrderError < Error
+    attr_reader :projections
+
+    def initialize(projections)
+      @projections = projections
+      super(
+        "Cannot determine a safe truncate order for projections #{projections.map(&:name).inspect} — " \
+        "their declared `truncates` classes form a foreign-key cycle. " \
+        "Either break the cycle or have one projection truncate the other's tables itself."
+      )
+    end
+  end
 end
