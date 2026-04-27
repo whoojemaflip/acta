@@ -18,9 +18,9 @@ module Acta
         @events_scope = query.scope
         @filtered_count = @events_scope.count
 
-        @page = [params[:page].to_i, 0].max
-        @total_pages = [(@filtered_count / PER_PAGE.to_f).ceil, 1].max
-        @page = [@page, @total_pages - 1].min
+        @page = [ params[:page].to_i, 0 ].max
+        @total_pages = [ (@filtered_count / PER_PAGE.to_f).ceil, 1 ].max
+        @page = [ @page, @total_pages - 1 ].min
 
         @events = @events_scope.order(id: :desc).offset(@page * PER_PAGE).limit(PER_PAGE)
 

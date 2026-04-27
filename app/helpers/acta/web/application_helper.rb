@@ -52,7 +52,7 @@ module Acta
           stream_key: params[:stream_key],
           q: params[:q],
           selected: params[:selected],
-          page: params[:page],
+          page: params[:page]
         }.compact_blank
 
         overrides = overrides.transform_keys(&:to_sym)

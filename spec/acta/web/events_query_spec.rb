@@ -13,7 +13,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
   # Auto-increments stream_sequence per (stream_type, stream_key) to satisfy
   # the unique index.
   def make_event(attrs)
-    seq_key = [attrs[:stream_type] || "test_stream", attrs[:stream_key] || "key-1"]
+    seq_key = [ attrs[:stream_type] || "test_stream", attrs[:stream_key] || "key-1" ]
     @sequences ||= Hash.new(0)
     @sequences[seq_key] += 1
 
@@ -29,7 +29,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       actor_id: "spec",
       source: "test",
       occurred_at: Time.current,
-      recorded_at: Time.current,
+      recorded_at: Time.current
     }
     Acta::Record.create!(defaults.merge(attrs))
   end
@@ -60,7 +60,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, event_type: "Foo")
       make_event(uuid: SecureRandom.uuid, event_type: "Bar")
 
-      expect(described_class.new(event_type: "Foo").scope.pluck(:event_type)).to eq(["Foo"])
+      expect(described_class.new(event_type: "Foo").scope.pluck(:event_type)).to eq([ "Foo" ])
     end
 
     it "is case-sensitive" do
@@ -75,7 +75,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, stream_type: "alpha")
       make_event(uuid: SecureRandom.uuid, stream_type: "beta")
 
-      expect(described_class.new(stream_type: "alpha").scope.pluck(:stream_type)).to eq(["alpha"])
+      expect(described_class.new(stream_type: "alpha").scope.pluck(:stream_type)).to eq([ "alpha" ])
     end
   end
 
@@ -84,7 +84,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, actor_id: "user-1")
       make_event(uuid: SecureRandom.uuid, actor_id: "user-2")
 
-      expect(described_class.new(actor_id: "user-1").scope.pluck(:actor_id)).to eq(["user-1"])
+      expect(described_class.new(actor_id: "user-1").scope.pluck(:actor_id)).to eq([ "user-1" ])
     end
   end
 
@@ -93,7 +93,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, stream_key: "alpha-beta")
       make_event(uuid: SecureRandom.uuid, stream_key: "gamma")
 
-      expect(described_class.new(stream_key: "beta").scope.pluck(:stream_key)).to eq(["alpha-beta"])
+      expect(described_class.new(stream_key: "beta").scope.pluck(:stream_key)).to eq([ "alpha-beta" ])
     end
 
     it "treats SQL LIKE wildcards in user input as literals" do
@@ -102,9 +102,9 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, stream_key: "foo_bar")
 
       # `%` should not match everything — it's a literal char in user input.
-      expect(described_class.new(stream_key: "%").scope.pluck(:stream_key)).to eq(["100%-discount"])
+      expect(described_class.new(stream_key: "%").scope.pluck(:stream_key)).to eq([ "100%-discount" ])
       # `_` should not match any single char — it's literal.
-      expect(described_class.new(stream_key: "_").scope.pluck(:stream_key)).to eq(["foo_bar"])
+      expect(described_class.new(stream_key: "_").scope.pluck(:stream_key)).to eq([ "foo_bar" ])
     end
   end
 
@@ -126,7 +126,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       make_event(uuid: SecureRandom.uuid, event_type: "WithPercent%")
       make_event(uuid: SecureRandom.uuid, event_type: "Plain")
 
-      expect(described_class.new(q: "%").scope.pluck(:event_type)).to eq(["WithPercent%"])
+      expect(described_class.new(q: "%").scope.pluck(:event_type)).to eq([ "WithPercent%" ])
     end
 
     it "is case-sensitive (LIKE on SQLite default)" do
@@ -135,7 +135,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       # SQLite LIKE is case-insensitive only for ASCII by default; assert
       # documented behaviour rather than asserting against the adapter quirk.
       result = described_class.new(q: "foo").scope.pluck(:event_type)
-      expect(result).to eq(["Foo"]).or eq([])
+      expect(result).to eq([ "Foo" ]).or eq([])
     end
   end
 
@@ -146,7 +146,7 @@ RSpec.describe Acta::Web::EventsQuery, :active_record do
       _e3 = make_event(uuid: SecureRandom.uuid, event_type: "Bar", actor_id: "alice")
 
       results = described_class.new(event_type: "Foo", actor_id: "alice").scope.pluck(:uuid)
-      expect(results).to eq([e1.uuid])
+      expect(results).to eq([ e1.uuid ])
     end
   end
 

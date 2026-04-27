@@ -44,7 +44,7 @@ module Acta
           stream_type: @stream_type,
           actor_id: @actor_id,
           stream_key: @stream_key,
-          q: @q,
+          q: @q
         }.compact
       end
 
