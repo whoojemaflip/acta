@@ -30,8 +30,6 @@ RSpec.describe Acta::Testing::DSL, :active_record do
 
   let(:command_class) do
     klass = Class.new(Acta::Command) do
-      emits BookRenamed
-
       param :book_id, :string
       param :new_name, :string
       validates :book_id, :new_name, presence: true

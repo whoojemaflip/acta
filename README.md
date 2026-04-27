@@ -199,8 +199,6 @@ to bypass the safety net explicitly.
 ```ruby
 # app/commands/place_order.rb
 class PlaceOrder < Acta::Command
-  emits OrderPlaced
-
   param :customer_id, :string
   param :total_cents, :integer
 
@@ -213,27 +211,24 @@ class PlaceOrder < Acta::Command
   end
 end
 
+cmd = PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+cmd.emitted_events.first.order_id   # => "order_…"
+```
+
+`Acta::Command.call` returns the command instance. The instance carries
+the params, the `emitted_events` array (every event emitted during
+`#call`, in order), and any state the command exposed via
+`attr_reader`. Callers that don't care about the events ignore the
+return value:
+
+```ruby
 PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
 ```
 
-`emits OrderPlaced` is purely documentary — it lists the event class(es)
-the command may emit so readers (and downstream tooling) can see at a
-glance what writes here. It's variadic for commands that conditionally
-emit different events for the same aggregate:
-
-```ruby
-class RegisterTrail < Acta::Command
-  emits TrailRegistered, TrailUpdated
-
-  def call
-    existing = Trail.find_by(id:)
-    existing ? emit(TrailUpdated.new(...)) : emit(TrailRegistered.new(...))
-  end
-end
-```
-
-The runtime does not enforce that only the listed events are emitted —
-`emits` is a hint, not a contract.
+Commands can emit zero, one, or many events. The framework does not
+invent a "primary" event — when a command emits more than one, the
+caller (who knows the domain) picks what matters from
+`cmd.emitted_events`.
 
 ### Optimistic locking (high-water mark)
 
@@ -244,8 +239,6 @@ concurrent writers to the same aggregate:
 
 ```ruby
 class RenameOrder < Acta::Command
-  emits OrderRenamed
-
   param :order_id, :string
   param :new_name, :string
 
@@ -273,8 +266,6 @@ carries it in its payload, and the projection reads it back out**.
 
 ```ruby
 class CreateOrder < Acta::Command
-  emits OrderCreated
-
   param :customer_id, :string
   param :total_cents, :integer
 

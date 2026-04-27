@@ -5,47 +5,22 @@ module Acta
     class << self
       alias_method :param, :attribute
 
+      # Instantiate the command with the given params, run it, and return
+      # the command instance. Callers that need to know what the command
+      # emitted read it back off the instance:
+      #
+      #   cmd = CreateOrder.call(customer_id: "c_1")
+      #   cmd.emitted_events                              # => [<OrderCreated …>]
+      #   cmd.emitted_events.find { _1.is_a?(OrderCreated) }.order_id
+      #
+      # Returning the instance keeps the framework honest about
+      # multiplicity — commands can emit zero, one, or many events, and
+      # the caller (who knows the domain) picks what matters. The
+      # framework does not invent a "primary" event.
       def call(**params)
-        new(**params).call
-      end
-
-      # Declare the event class(es) this command may emit. Variadic so
-      # commands that conditionally emit different events for the same
-      # aggregate can list every option:
-      #
-      #   class RegisterTrail < Acta::Command
-      #     emits TrailRegistered, TrailUpdated
-      #
-      #     def call
-      #       existing = Trail.find_by(id:)
-      #       existing ? emit(TrailUpdated.new(...)) : emit(TrailRegistered.new(...))
-      #     end
-      #   end
-      #
-      # The runtime does not enforce that only the listed events are
-      # emitted — `emits` is a hint, not a contract. It exists for
-      # documentation and for downstream tooling (e.g. introspection
-      # of which commands write to which streams).
-      def emits(*event_classes)
-        raise ArgumentError, "emits requires at least one event class" if event_classes.empty?
-
-        event_classes.each do |event_class|
-          unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
-            raise ArgumentError,
-                  "emits expects classes with stream_type and stream_key_attribute " \
-                  "(typically Acta::Event subclasses), got #{event_class.inspect}"
-          end
-        end
-
-        @emitted_event_classes = event_classes
-      end
-
-      def emitted_event_classes
-        @emitted_event_classes || []
-      end
-
-      def emitted_event_class
-        emitted_event_classes.first
+        instance = new(**params)
+        instance.call
+        instance
       end
     end
 
@@ -58,6 +33,16 @@ module Acta
     # high-water mark for optimistic locking — see Acta.version_of.
     def emit(event, if_version: nil)
       Acta.emit(event, if_version: if_version)
+      emitted_events << event
+      event
+    end
+
+    # Every event emitted during this command instance's invocation, in
+    # the order `emit` was called. Empty until #call runs; cascading
+    # commands invoked from inside #call produce events in their own
+    # instances, not this one.
+    def emitted_events
+      @emitted_events ||= []
     end
   end
 end
