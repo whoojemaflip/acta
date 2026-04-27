@@ -187,6 +187,26 @@ explicit `stream :order, key: :order_id` form instead if the command
 operates on a different aggregate than its primary event, or if it
 doesn't emit an Acta event.
 
+For commands that conditionally emit different events for the same
+aggregate, list them all so the declaration stops being a half-truth:
+
+```ruby
+class RegisterTrail < Acta::Command
+  emits TrailRegistered, TrailUpdated   # variadic — any of these may be emitted
+
+  def call
+    existing = Trail.find_by(id:)
+    existing ? emit(TrailUpdated.new(...)) : emit(TrailRegistered.new(...))
+  end
+end
+```
+
+Stream config is inherited from the first event class; the rest are
+documentation. The runtime does not enforce that only the listed events
+get emitted — `emits` is a hint, not a contract. List events that share
+the same aggregate; if the command spans aggregates, declare `stream`
+explicitly instead.
+
 `on_concurrent_write :raise` captures the stream's current sequence at
 command instantiation and asserts the stream hasn't moved by emit time.
 If another writer has appended to the stream in between, the command

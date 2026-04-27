@@ -10,6 +10,18 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+### Changed
+
+- `Acta::Command.emits` is now variadic — `emits EventA, EventB, ...`
+  for commands that conditionally emit different events. Stream config
+  is still inherited from the first event class; explicit `stream`
+  declarations still take precedence. The runtime does not enforce that
+  only the listed events are emitted (it never did) — `emits` is a
+  hint, not a contract. Backwards-compatible: single-arg `emits A`
+  works exactly as before. New `Command.emitted_event_classes` returns
+  the full list; `Command.emitted_event_class` (singular) still
+  returns the first. Closes #5.
+
 ### Added
 
 - `Acta::Testing.default_actor!(config, **attrs)` — RSpec configuration

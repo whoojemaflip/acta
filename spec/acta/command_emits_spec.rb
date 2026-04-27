@@ -128,5 +128,97 @@ RSpec.describe "Acta::Command with `emits`", :active_record do
         Class.new(Acta::Command) { emits String }
       }.to raise_error(ArgumentError, /stream_type and stream_key_attribute/)
     end
+
+    it "raises ArgumentError when emits is called with no arguments" do
+      expect {
+        Class.new(Acta::Command) { emits }
+      }.to raise_error(ArgumentError, /requires at least one event class/)
+    end
+
+    it "raises ArgumentError when any of multiple emits arguments lacks stream hooks" do
+      expect {
+        Class.new(Acta::Command) { emits BookRenamed, String }
+      }.to raise_error(ArgumentError, /stream_type and stream_key_attribute.*String/)
+    end
+  end
+
+  describe "with multiple event classes (variadic)" do
+    let(:other_event_class) do
+      klass = Class.new(Acta::Event) do
+        stream :book, key: :book_id
+        attribute :book_id, :string
+        attribute :reason, :string
+        validates :book_id, :reason, presence: true
+      end
+      stub_const("BookArchived", klass)
+      klass
+    end
+
+    let(:command_class) do
+      other_event_class
+
+      klass = Class.new(Acta::Command) do
+        emits BookRenamed, BookArchived
+
+        param :book_id, :string
+        param :new_name, :string
+        param :archive, :boolean, default: false
+        param :reason, :string
+
+        def call
+          if archive
+            emit BookArchived.new(book_id:, reason:)
+          else
+            emit BookRenamed.new(book_id:, new_name:)
+          end
+        end
+      end
+      stub_const("UpdateBook", klass)
+      klass
+    end
+
+    it "exposes all listed events via emitted_event_classes" do
+      expect(command_class.emitted_event_classes).to eq([ BookRenamed, BookArchived ])
+    end
+
+    it "still inherits stream_type from the first event class" do
+      expect(command_class.stream_type).to eq("book")
+    end
+
+    it "still inherits stream_key_attribute from the first event class" do
+      expect(command_class.stream_key_attribute).to eq(:book_id)
+    end
+
+    it "emitted_event_class returns the first event class for backward compat" do
+      expect(command_class.emitted_event_class).to eq(BookRenamed)
+    end
+
+    it "lets the command emit any of the listed events at runtime" do
+      command_class.call(book_id: "w_1", new_name: "Foo")
+      command_class.call(book_id: "w_1", archive: true, reason: "out of print")
+
+      events = Acta.events.all
+      expect(events.map(&:class)).to eq([ BookRenamed, BookArchived ])
+    end
+
+    it "does not enforce that only listed events are emitted (emits is a hint, not a contract)" do
+      Class.new(Acta::Event) do
+        attribute :book_id, :string
+        validates :book_id, presence: true
+      end.tap { |c| stub_const("BookSurprise", c) }
+
+      surprise_command = Class.new(Acta::Command) do
+        emits BookRenamed
+        param :book_id, :string
+
+        def call
+          emit BookSurprise.new(book_id:)
+        end
+      end
+      stub_const("SurpriseCommand", surprise_command)
+
+      expect { surprise_command.call(book_id: "w_1") }.not_to raise_error
+      expect(Acta.events.last).to be_a(BookSurprise)
+    end
   end
 end

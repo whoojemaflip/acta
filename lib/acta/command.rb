@@ -20,8 +20,8 @@ module Acta
         @stream_key_attribute = key
       end
 
-      # Declare the primary event class this command emits. The command
-      # inherits stream_type and stream_key_attribute from that event,
+      # Declare the event class(es) this command might emit. The command
+      # inherits stream_type and stream_key_attribute from the FIRST event,
       # removing the duplicate declaration in the common case:
       #
       #   class OrderRenamed < Acta::Event
@@ -34,23 +34,56 @@ module Acta
       #     on_concurrent_write :raise
       #     # ...
       #   end
-      def emits(event_class)
-        unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
-          raise ArgumentError,
-                "emits expects a class with stream_type and stream_key_attribute (typically an Acta::Event subclass)"
+      #
+      # Commands that conditionally emit different events for the same
+      # aggregate can list them all — handy for documentation and so the
+      # `emits` line stops being a half-truth:
+      #
+      #   class RegisterTrail < Acta::Command
+      #     emits TrailRegistered, TrailUpdated
+      #
+      #     def call
+      #       existing = Trail.find_by(id:)
+      #       existing ? emit(TrailUpdated.new(...)) : emit(TrailRegistered.new(...))
+      #     end
+      #   end
+      #
+      # The runtime does not enforce that only the listed events are
+      # emitted — `emits` is a hint, not a contract. List the events that
+      # share the same aggregate (and therefore the same stream config),
+      # or use the explicit `stream :type, key: :attr` form when the
+      # command emits across multiple aggregates.
+      def emits(*event_classes)
+        if event_classes.empty?
+          raise ArgumentError, "emits requires at least one event class"
         end
 
-        @emitted_event_class = event_class
+        event_classes.each do |event_class|
+          unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
+            raise ArgumentError,
+                  "emits expects classes with stream_type and stream_key_attribute (typically Acta::Event subclasses), got #{event_class.inspect}"
+          end
+        end
+
+        @emitted_event_classes = event_classes
       end
 
-      attr_reader :emitted_event_class, :concurrent_write_action
+      def emitted_event_classes
+        @emitted_event_classes || []
+      end
+
+      def emitted_event_class
+        emitted_event_classes.first
+      end
+
+      attr_reader :concurrent_write_action
 
       def stream_type
-        @stream_type || @emitted_event_class&.stream_type
+        @stream_type || emitted_event_class&.stream_type
       end
 
       def stream_key_attribute
-        @stream_key_attribute || @emitted_event_class&.stream_key_attribute
+        @stream_key_attribute || emitted_event_class&.stream_key_attribute
       end
 
       # Declare how the command handles concurrent writes to its stream.
