@@ -1,0 +1,72 @@
+<%# Standalone event detail view — deep-linkable permalink for a single event %>
+
+<header class="acta-header">
+  <a href="<%= url_for(controller: "acta/web/events", action: "index") %>" class="acta-logo">
+    <div class="acta-logo-dot"></div>
+    acta<span class="acta-dim acta-sans" style="font-weight:400">/log</span>
+  </a>
+  <span class="acta-dim" style="margin-left:8px;font-size:11px">·</span>
+  <span class="acta-dim" style="font-size:11px;margin-left:8px"><%= @event.event_type %></span>
+  <span class="acta-dim" style="margin-left:auto;font-size:10px;font-family:Inter,sans-serif">
+    <a href="<%= url_for(controller: "acta/web/events", action: "index", selected: @event.uuid) %>" style="color:var(--accent);text-decoration:none">
+      ← back to log
+    </a>
+  </span>
+</header>
+
+<div class="acta-body">
+  <main class="acta-main" style="max-width:700px;padding:24px 32px;overflow-y:auto;">
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+      <span class="acta-dot" style="background:<%= acta_dot_color(@event.event_type) %>;width:10px;height:10px;"></span>
+      <span style="font-size:16px;color:var(--fg);"><%= @event.event_type %></span>
+      <span class="acta-sans acta-dim" style="font-size:11px;">v<%= @event.event_version %></span>
+    </div>
+
+    <div class="acta-kv">
+      <span class="acta-kv-key">uuid</span>
+      <span class="acta-kv-val"><%= @event.uuid %></span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">recorded_at</span>
+      <span class="acta-kv-val"><%= acta_fmt_abs(@event.recorded_at) %></span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">occurred_at</span>
+      <span class="acta-kv-val"><%= acta_fmt_abs(@event.occurred_at) %></span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">stream</span>
+      <span class="acta-kv-val">
+        <a href="<%= url_for(controller: "acta/web/events", action: "index", stream_type: @event.stream_type, stream_key: @event.stream_key) %>">
+          <%= @event.stream_type %>/<%= @event.stream_key %><% if @event.respond_to?(:stream_sequence) && @event.stream_sequence.present? %> #<%= @event.stream_sequence %><% end %>
+        </a>
+      </span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">actor</span>
+      <span class="acta-kv-val">
+        <a href="<%= url_for(controller: "acta/web/events", action: "index", actor_id: @event.actor_id) %>">
+          <%= @event.actor_type %>/<%= @event.actor_id %>
+        </a>
+      </span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">source</span>
+      <span class="acta-kv-val"><%= @event.source %></span>
+    </div>
+    <div class="acta-kv">
+      <span class="acta-kv-key">event_version</span>
+      <span class="acta-kv-val"><%= @event.event_version %></span>
+    </div>
+
+    <div class="acta-section-label">payload</div>
+    <pre class="acta-json-block"><%= acta_pretty_json(@event.payload) %></pre>
+
+    <% if @event.respond_to?(:metadata) && @event.metadata.present? && @event.metadata != {} %>
+      <div class="acta-section-label">metadata</div>
+      <pre class="acta-json-block"><%= acta_pretty_json(@event.metadata) %></pre>
+    <% end %>
+
+  </main>
+</div>
