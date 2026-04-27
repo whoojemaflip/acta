@@ -16,6 +16,7 @@ require_relative "acta/projection"
 require_relative "acta/reactor"
 require_relative "acta/reactor_job"
 require_relative "acta/command"
+require_relative "acta/railtie" if defined?(::Rails::Railtie)
 
 module Acta
   def self.adapter
@@ -129,7 +130,7 @@ module Acta
   end
 
   def self.register_projection(klass)
-    projection_classes << klass
+    projection_classes << klass unless projection_classes.include?(klass)
   end
 
   def self.rebuild!

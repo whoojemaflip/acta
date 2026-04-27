@@ -129,6 +129,24 @@ Projections run synchronously inside the emit transaction. If they raise,
 the entire emit rolls back — the event row isn't written, reactors don't
 fire, base handlers don't fire.
 
+Projections register themselves with Acta the first time their class is
+loaded (via `Class.inherited`). Acta's Railtie eagerly loads everything
+under `app/projections`, `app/handlers`, and `app/reactors` on each
+`config.to_prepare`, so subscribers are wired up before the first request
+— including in dev mode where Zeitwerk would otherwise wait until
+something explicitly references the constant. If your subscribers live
+elsewhere, point Acta at them:
+
+```ruby
+# config/application.rb
+config.acta.projection_paths = %w[app/projections app/read_models]
+config.acta.handler_paths    = %w[app/handlers]
+config.acta.reactor_paths    = %w[app/reactors]
+```
+
+Set a path list to `[]` to disable auto-loading and manage subscriber
+lifecycle yourself.
+
 Replay at any time:
 
 ```ruby
