@@ -16,7 +16,13 @@ require_relative "acta/projection"
 require_relative "acta/reactor"
 require_relative "acta/reactor_job"
 require_relative "acta/command"
+require_relative "acta/projection_managed"
 require_relative "acta/railtie" if defined?(::Rails::Railtie)
+
+require "active_support/lazy_load_hooks"
+ActiveSupport.on_load(:active_record) do
+  include Acta::ProjectionManaged
+end
 
 module Acta
   def self.adapter
@@ -81,7 +87,7 @@ module Acta
       event:,
       projection_class: registration[:handler_class]
     ) do
-      registration[:block].call(event)
+      Projection.applying! { registration[:block].call(event) }
     end
   rescue ProjectionError
     raise
@@ -134,7 +140,7 @@ module Acta
   end
 
   def self.rebuild!
-    projection_classes.each(&:truncate!)
+    Projection.applying! { projection_classes.each(&:truncate!) }
     Record.order(:id).find_each do |record|
       event = events.find_by_uuid(record.uuid)
       dispatch(event, kind: :projection)

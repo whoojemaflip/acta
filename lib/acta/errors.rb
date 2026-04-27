@@ -71,4 +71,19 @@ module Acta
       super("Replay failed on event id=#{record.id} uuid=#{record.uuid} (#{record.event_type}): #{original.message}")
     end
   end
+
+  class ProjectionWriteError < Error
+    attr_reader :model_class, :write_method
+
+    def initialize(model_class:, write_method:)
+      @model_class = model_class
+      @write_method = write_method
+      super(
+        "Direct #{write_method} on #{model_class.name} bypasses the event log. " \
+        "#{model_class.name} is acta_managed! — its rows are owned by an Acta::Projection. " \
+        "Emit an event so the projection can update the row, or wrap intentional " \
+        "out-of-band writes in `Acta::Projection.applying! { ... }` (fixtures, migrations, backfills)."
+      )
+    end
+  end
 end

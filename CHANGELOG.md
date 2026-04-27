@@ -12,6 +12,16 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Added
 
+- `acta_managed!` AR class macro — opt-in safety net for projection-owned
+  models. Once an AR model becomes a projection, writes from anywhere
+  other than the projection bypass the event log and break
+  `Acta.rebuild!` determinism. `acta_managed!` gates every AR write path
+  (save / update / destroy / update_columns / update_all / delete_all /
+  insert_all / upsert_all) on `Acta::Projection.applying?` and raises
+  `Acta::ProjectionWriteError` (or warns, with `on_violation: :warn`)
+  when violated. `Acta::Projection.applying! { … }` is the public escape
+  hatch for fixtures, migrations, and intentional backfills. Closes #6.
+
 - `Acta::Testing.default_actor!(config, **attrs)` — RSpec configuration
   helper that sets `Acta::Current.actor` before every example and resets
   it after, eliminating the per-spec boilerplate and the easy-to-forget
