@@ -23,6 +23,9 @@ module PostgresAdapterSupport
       adapter: "sqlite3",
       database: ":memory:"
     )
+    Acta::Schema.install(ActiveRecord::Base.connection)
+    Acta::Record.reset_column_information
+    Acta.reset_adapter!
   end
 
   def self.with_connection(&block)
