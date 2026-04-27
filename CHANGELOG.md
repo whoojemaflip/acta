@@ -10,6 +10,22 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+### Added
+
+- `Acta::Railtie` — auto-loads projection / handler / reactor classes at boot
+  so they self-register before the first emit, even in Rails dev mode where
+  Zeitwerk would otherwise lazy-load them on first reference. Without this,
+  a projection that nothing has touched yet stays unsubscribed: the emit
+  succeeds, the event row is written, and the projection silently never runs.
+  Configurable via `config.acta.{projection,handler,reactor}_paths`; defaults
+  to `app/projections`, `app/handlers`, `app/reactors`. Set a path list to
+  `[]` to opt out. Closes #7.
+
+### Changed
+
+- `Acta.register_projection` is now idempotent — registering the same
+  projection class twice is a no-op instead of double-dispatching events.
+
 ## [0.1.1]
 
 ### Added
