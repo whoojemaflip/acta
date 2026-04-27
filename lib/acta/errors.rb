@@ -34,17 +34,17 @@ module Acta
     end
   end
 
-  class ConcurrencyConflict < Error
-    attr_reader :stream_type, :stream_key, :expected_sequence, :actual_sequence
+  class VersionConflict < Error
+    attr_reader :stream_type, :stream_key, :expected_version, :actual_version
 
-    def initialize(stream_type:, stream_key:, expected_sequence:, actual_sequence:)
+    def initialize(stream_type:, stream_key:, expected_version:, actual_version:)
       @stream_type = stream_type
       @stream_key = stream_key
-      @expected_sequence = expected_sequence
-      @actual_sequence = actual_sequence
+      @expected_version = expected_version
+      @actual_version = actual_version
       super(
-        "Concurrent write on stream #{stream_type}/#{stream_key}: " \
-        "expected to write at sequence #{expected_sequence}, stream is at #{actual_sequence}"
+        "Version conflict on stream #{stream_type}/#{stream_key}: " \
+        "expected version #{expected_version}, stream is at version #{actual_version}"
       )
     end
   end
@@ -81,6 +81,21 @@ module Acta
         "Cannot determine a safe truncate order for projections #{projections.map(&:name).inspect} — " \
         "their declared `truncates` classes form a foreign-key cycle. " \
         "Either break the cycle or have one projection truncate the other's tables itself."
+      )
+    end
+  end
+
+  class ProjectionWriteError < Error
+    attr_reader :model_class, :write_method
+
+    def initialize(model_class:, write_method:)
+      @model_class = model_class
+      @write_method = write_method
+      super(
+        "Direct #{write_method} on #{model_class.name} bypasses the event log. " \
+        "#{model_class.name} is acta_managed! — its rows are owned by an Acta::Projection. " \
+        "Emit an event so the projection can update the row, or wrap intentional " \
+        "out-of-band writes in `Acta::Projection.applying! { ... }` (fixtures, migrations, backfills)."
       )
     end
   end

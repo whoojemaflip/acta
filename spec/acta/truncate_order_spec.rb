@@ -199,6 +199,39 @@ RSpec.describe "Acta.rebuild! truncate ordering", :active_record do
     expect { Acta.rebuild! }.not_to raise_error
   end
 
+  it "truncates `acta_managed!` AR models without tripping the safety net" do
+    # Models marked `acta_managed!` raise ProjectionWriteError on direct
+    # delete_all unless wrapped in Projection.applying!. Acta.rebuild!'s
+    # truncate phase runs inside that wrapper so the default
+    # `truncate!` (which calls delete_all per declared class) works on
+    # managed models without further ceremony.
+    managed_zone = Class.new(ActiveRecord::Base) do
+      self.table_name = "zones"
+    end
+    stub_const("ManagedZone", managed_zone)
+    managed_zone.acta_managed!
+
+    managed_trail = Class.new(ActiveRecord::Base) do
+      self.table_name = "trails"
+      belongs_to :zone, class_name: "ManagedZone"
+    end
+    stub_const("ManagedTrail", managed_trail)
+    managed_trail.acta_managed!
+
+    Class.new(Acta::Projection) { truncates ManagedTrail, ManagedZone }
+      .tap { |k| stub_const("ManagedCatalogP", k) }
+
+    ManagedZone.connection.execute("PRAGMA foreign_keys = ON")
+    Acta::Projection.applying! do
+      zone = ManagedZone.create!(name: "Whistler North")
+      ManagedTrail.create!(name: "Lord of the Squirrels", zone_id: zone.id)
+    end
+
+    expect { Acta.rebuild! }.not_to raise_error
+    expect(ManagedTrail.count).to eq(0)
+    expect(ManagedZone.count).to eq(0)
+  end
+
   it "raises Acta::TruncateOrderError when the FK graph has a cycle across projections" do
     cycle_b = Class.new(ActiveRecord::Base) do
       self.table_name = "ride_efforts"

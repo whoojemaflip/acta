@@ -16,7 +16,13 @@ require_relative "acta/projection"
 require_relative "acta/reactor"
 require_relative "acta/reactor_job"
 require_relative "acta/command"
+require_relative "acta/projection_managed"
 require_relative "acta/railtie" if defined?(::Rails::Railtie)
+
+require "active_support/lazy_load_hooks"
+ActiveSupport.on_load(:active_record) do
+  include Acta::ProjectionManaged
+end
 
 module Acta
   def self.adapter
@@ -27,11 +33,11 @@ module Acta
     @adapter = nil
   end
 
-  def self.emit(event, actor: nil, expected_sequence: nil)
+  def self.emit(event, actor: nil, if_version: nil)
     event.actor = actor if actor
     raise MissingActor, "No actor for emit of #{event.event_type} (set Acta::Current.actor or pass actor:)" if event.actor.nil?
 
-    assert_expected_sequence!(event, expected_sequence) unless expected_sequence.nil?
+    assert_version!(event, if_version) unless if_version.nil?
 
     ActiveSupport::Notifications.instrument("acta.event_emitted", event:, event_type: event.event_type) do
       Record.transaction(requires_new: true) do
@@ -81,7 +87,7 @@ module Acta
       event:,
       projection_class: registration[:handler_class]
     ) do
-      registration[:block].call(event)
+      Projection.applying! { registration[:block].call(event) }
     end
   rescue ProjectionError
     raise
@@ -134,7 +140,7 @@ module Acta
   end
 
   def self.rebuild!
-    truncate_projections!
+    Projection.applying! { truncate_projections! }
     Record.order(:id).find_each do |record|
       event = events.find_by_uuid(record.uuid)
       dispatch(event, kind: :projection)
@@ -145,6 +151,9 @@ module Acta
     end
   end
 
+  # Truncate all projections in FK-safe order. Wrapped in `Projection.applying!`
+  # by `rebuild!` so projection-managed AR models (`acta_managed!`) accept the
+  # delete_all calls instead of raising `ProjectionWriteError`.
   def self.truncate_projections!
     legacy, declared = projection_classes.partition { |p| p.truncated_classes.empty? }
 
@@ -230,25 +239,31 @@ module Acta
   end
   private_class_method :handler_kind
 
-  def self.assert_expected_sequence!(event, expected)
+  # Public: read the current high-water mark for a stream. Returns 0 for
+  # streams that have never been emitted to. Use the result with
+  # `Acta.emit(..., if_version: version)` for optimistic locking.
+  def self.version_of(stream_type:, stream_key:)
+    Record
+      .where(stream_type: stream_type.to_s, stream_key: stream_key)
+      .maximum(:stream_sequence) || 0
+  end
+
+  def self.assert_version!(event, expected)
     if event.stream_type.nil? || event.stream_key.nil?
-      raise ArgumentError, "expected_sequence requires the event to declare a stream"
+      raise ArgumentError, "if_version requires the event to declare a stream"
     end
 
-    actual = Record
-               .where(stream_type: event.stream_type, stream_key: event.stream_key)
-               .maximum(:stream_sequence) || 0
-
+    actual = version_of(stream_type: event.stream_type, stream_key: event.stream_key)
     return if actual == expected
 
-    raise ConcurrencyConflict.new(
+    raise VersionConflict.new(
       stream_type: event.stream_type,
       stream_key: event.stream_key,
-      expected_sequence: expected,
-      actual_sequence: actual
+      expected_version: expected,
+      actual_version: actual
     )
   end
-  private_class_method :assert_expected_sequence!
+  private_class_method :assert_version!
 
   def self.events
     EventsQuery.new(adapter.fetch_records)
@@ -273,3 +288,8 @@ module Acta
   end
   private_class_method :record_attributes_for
 end
+
+# The web admin engine is opt-in: required only when the host runs Rails.
+# Loading it unconditionally would pull in ActionController etc. for
+# non-Rails consumers (background jobs, scripts).
+require_relative "acta/web" if defined?(::Rails)
