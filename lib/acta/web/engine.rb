@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails/engine"
+require "action_dispatch" # isolate_namespace references ActionDispatch::Routing
 
 module Acta
   module Web
