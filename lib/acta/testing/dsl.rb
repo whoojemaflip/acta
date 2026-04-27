@@ -57,6 +57,18 @@ module Acta
         )
       end
 
+      # Run the block with a different Acta::Current.actor, restoring the
+      # previous actor afterward (even if the block raises). Useful for
+      # asserting an emit attributes the right user when the surrounding
+      # spec's default actor would otherwise overwrite it.
+      def with_actor(**attributes)
+        previous = Acta::Current.actor
+        Acta::Current.actor = Acta::Actor.new(**attributes)
+        yield
+      ensure
+        Acta::Current.actor = previous
+      end
+
       # Assert that running Acta.rebuild! twice produces the same projected
       # state. The block returns a snapshot of the relevant state (whatever
       # the app considers authoritative for this projection).

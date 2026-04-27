@@ -108,4 +108,41 @@ RSpec.describe Acta::Testing::DSL, :active_record do
     then_emitted renamed_class
     then_emitted_nothing_else
   end
+
+  describe "#with_actor" do
+    it "sets Acta::Current.actor for the duration of the block" do
+      previous = Acta::Current.actor
+
+      captured = nil
+      with_actor(type: "user", id: "u_42", source: "web") do
+        captured = Acta::Current.actor
+      end
+
+      expect(captured.type).to eq("user")
+      expect(captured.id).to eq("u_42")
+      expect(captured.source).to eq("web")
+      expect(Acta::Current.actor).to eq(previous)
+    end
+
+    it "restores the previous actor even when the block raises" do
+      previous = Acta::Current.actor
+
+      expect {
+        with_actor(type: "user", id: "u_1") { raise "boom" }
+      }.to raise_error(RuntimeError, "boom")
+
+      expect(Acta::Current.actor).to eq(previous)
+    end
+
+    it "attributes emitted events to the scoped actor" do
+      with_actor(type: "user", id: "u_42", source: "web") do
+        Acta.emit(added_class.new(book_id: "w_1", name: "Foo"))
+      end
+
+      record = Acta::Record.last
+      expect(record.actor_type).to eq("user")
+      expect(record.actor_id).to eq("u_42")
+      expect(record.source).to eq("web")
+    end
+  end
 end

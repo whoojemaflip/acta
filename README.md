@@ -303,11 +303,45 @@ require "acta/testing"
 require "acta/testing/matchers"
 
 RSpec.configure do |config|
+  Acta::Testing.default_actor!(config)
+  config.include Acta::Testing::DSL
+
   config.around(:each, :active_record) do |example|
     Acta::Testing.test_mode { example.run }
   end
 end
 ```
+
+### Default actor
+
+`Acta.emit` requires `Acta::Current.actor` to be set — every event needs
+a known author. `Acta::Testing.default_actor!(config)` adds a
+`before(:each)` that sets a default `system / rspec / test` actor and an
+`after(:each)` that resets it, so specs (and the commands they call)
+don't trip `Acta::MissingActor`. Override any attribute to match your
+project's vocabulary:
+
+```ruby
+Acta::Testing.default_actor!(config, type: "user", id: "test-user-1", source: "spec")
+```
+
+For an individual example that needs to attribute emissions to a
+specific actor, scope an override with `with_actor`:
+
+```ruby
+include Acta::Testing::DSL
+
+it "records the user as the actor" do
+  with_actor(type: "user", id: user.id, source: "web") do
+    PlaceOrder.call(...)
+  end
+
+  expect(Acta::Record.last.actor_id).to eq(user.id)
+end
+```
+
+`with_actor` restores the surrounding actor when the block returns or
+raises.
 
 ### RSpec matchers
 
