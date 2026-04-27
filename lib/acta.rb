@@ -205,3 +205,8 @@ module Acta
   end
   private_class_method :record_attributes_for
 end
+
+# The web admin engine is opt-in: required only when the host runs Rails.
+# Loading it unconditionally would pull in ActionController etc. for
+# non-Rails consumers (background jobs, scripts).
+require_relative "acta/web" if defined?(::Rails)
