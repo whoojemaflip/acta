@@ -12,6 +12,16 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Added
 
+- `Acta::Testing.default_actor!(config, **attrs)` — RSpec configuration
+  helper that sets `Acta::Current.actor` before every example and resets
+  it after, eliminating the per-spec boilerplate and the easy-to-forget
+  `Acta::MissingActor` errors that come with it. Defaults to a
+  `system / rspec / test` actor; override any attribute. Closes #8.
+- `Acta::Testing::DSL#with_actor(**attrs) { … }` — block-scoped actor
+  override for individual examples that need to attribute emissions to
+  a specific user. Restores the previous actor when the block returns
+  (or raises).
+
 - `Acta::Railtie` — auto-loads projection / handler / reactor classes at boot
   so they self-register before the first emit, even in Rails dev mode where
   Zeitwerk would otherwise lazy-load them on first reference. Without this,
