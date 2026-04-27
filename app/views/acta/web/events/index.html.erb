@@ -1,0 +1,312 @@
+<%# ── Header ─────────────────────────────────────────────────────────── %>
+<header class="acta-header">
+  <a href="<%= acta_filter_url(event_type: nil, stream_type: nil, actor_id: nil, stream_key: nil, q: nil, selected: nil, page: nil) %>" class="acta-logo">
+    <div class="acta-logo-dot"></div>
+    acta<span class="acta-dim acta-sans" style="font-weight:400">/log</span>
+  </a>
+
+  <form method="get" action="<%= request.path %>" class="acta-filter-bar acta-filter-form">
+    <%# Preserve facet filters across text-search submissions %>
+    <% %i[event_type stream_type actor_id].each do |f| %>
+      <% if params[f].present? %>
+        <input type="hidden" name="<%= f %>" value="<%= h params[f] %>">
+      <% end %>
+    <% end %>
+
+    <div class="acta-filter-group" style="flex:1 1 320px;max-width:480px;">
+      <span class="acta-dim" style="font-size:13px">⌕</span>
+      <input
+        type="search"
+        name="q"
+        value="<%= h params[:q] %>"
+        placeholder="filter… event type, actor, stream"
+        class="acta-filter-input acta-filter-input-q"
+        autocomplete="off"
+        spellcheck="false"
+      >
+    </div>
+
+    <div class="acta-filter-group" style="flex:0 1 240px;min-width:160px;">
+      <span class="acta-label acta-dim" style="font-size:10px;font-family:Inter,sans-serif;text-transform:uppercase;letter-spacing:0.6px;white-space:nowrap">stream_key</span>
+      <input
+        type="search"
+        name="stream_key"
+        value="<%= h params[:stream_key] %>"
+        placeholder="grep stream id…"
+        class="acta-filter-input acta-filter-input-sk<%= ' has-value' if params[:stream_key].present? %>"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <% if params[:stream_key].present? %>
+        <a href="<%= acta_filter_url(stream_key: nil) %>" class="acta-clear-btn">✕</a>
+      <% end %>
+    </div>
+
+    <button type="submit" class="acta-filter-submit acta-sans">Filter</button>
+  </form>
+
+  <div class="acta-status">
+    <span><span class="acta-status-dot">●</span> live</span>
+    <span><%= @base_count.to_s(:delimited) rescue @base_count %> events</span>
+  </div>
+</header>
+
+<%# ── Body ───────────────────────────────────────────────────────────── %>
+<div class="acta-body">
+
+  <%# ── Left rail: facets ──────────────────────────────────────────── %>
+  <aside class="acta-rail">
+    <details class="acta-facet" open>
+      <summary>event_type</summary>
+      <% @facet_event_type.each do |event_type, count| %>
+        <a
+          href="<%= acta_filter_url(event_type: params[:event_type] == event_type ? nil : event_type) %>"
+          class="acta-facet-item<%= ' active' if params[:event_type] == event_type %>"
+        >
+          <span class="acta-facet-dot acta-dot" style="background:<%= acta_dot_color(event_type) %>"></span>
+          <span class="acta-facet-name"><%= event_type %></span>
+          <span class="acta-facet-count"><%= count %></span>
+        </a>
+      <% end %>
+    </details>
+
+    <details class="acta-facet" open>
+      <summary>stream_type</summary>
+      <% @facet_stream_type.each do |stream_type, count| %>
+        <a
+          href="<%= acta_filter_url(stream_type: params[:stream_type] == stream_type ? nil : stream_type) %>"
+          class="acta-facet-item<%= ' active' if params[:stream_type] == stream_type %>"
+        >
+          <span class="acta-facet-name"><%= stream_type %></span>
+          <span class="acta-facet-count"><%= count %></span>
+        </a>
+      <% end %>
+    </details>
+
+    <details class="acta-facet" open>
+      <summary>actor_id</summary>
+      <% @facet_actor_id.each do |actor_id, count| %>
+        <a
+          href="<%= acta_filter_url(actor_id: params[:actor_id] == actor_id ? nil : actor_id) %>"
+          class="acta-facet-item<%= ' active' if params[:actor_id] == actor_id %>"
+        >
+          <span class="acta-facet-name"><%= actor_id %></span>
+          <span class="acta-facet-count"><%= count %></span>
+        </a>
+      <% end %>
+    </details>
+  </aside>
+
+  <%# ── Main pane ──────────────────────────────────────────────────── %>
+  <main class="acta-main">
+
+    <%# Active filter chips -%>
+    <div class="acta-chips">
+      <% if @active_filters.empty? %>
+        <span class="acta-dim acta-sans">no filters · <%= @base_count %> events</span>
+      <% else %>
+        <% if params[:q].present? %>
+          <span class="acta-chip acta-sans">
+            q:&nbsp;<span class="acta-chip-val"><%= h params[:q] %></span>
+            <a href="<%= acta_filter_url(q: nil) %>" class="acta-chip-x">✕</a>
+          </span>
+        <% end %>
+        <% { event_type: params[:event_type], stream_type: params[:stream_type], actor_id: params[:actor_id], stream_key: params[:stream_key] }.compact_blank.each do |key, value| %>
+          <span class="acta-chip acta-sans">
+            <%= key %>:&nbsp;<span class="acta-chip-val"><%= h value %></span>
+            <a href="<%= acta_filter_url(key => nil) %>" class="acta-chip-x">✕</a>
+          </span>
+        <% end %>
+        <span class="acta-chips-count acta-sans"><%= @filtered_count %> of <%= @base_count %></span>
+      <% end %>
+    </div>
+
+    <%# Log rows -%>
+    <div class="acta-log">
+      <% if @base_count == 0 %>
+        <%# ── Empty install state ────────────────────────────────────── %>
+        <div class="acta-empty-install">
+          <div class="acta-empty-badge">
+            <span class="acta-dot" style="background:var(--dim)"></span>
+            empty log
+          </div>
+          <div class="acta-empty-title">No events have been recorded yet.</div>
+          <p class="acta-empty-desc">
+            Acta is wired up — the <code>events</code> table is empty.
+            Set an actor at your request boundary and emit your first event,
+            then reload this page.
+          </p>
+
+          <div class="acta-empty-steps">
+            <div>
+              <div class="acta-step-label">
+                <span class="acta-step-num">1</span>
+                Set the actor at your request boundary
+              </div>
+              <pre class="acta-code-block"># app/controllers/application_controller.rb
+before_action do
+  Acta::Current.actor = Acta::Actor.new(
+    type: "user",
+    id:   current_user.id,
+    source: "web"
+  )
+end</pre>
+            </div>
+
+            <div>
+              <div class="acta-step-label">
+                <span class="acta-step-num">2</span>
+                Emit an event
+              </div>
+              <pre class="acta-code-block">Acta.emit(OrderPlaced.new(
+  order_id:    "o_1",
+  customer_id: "c_1",
+  total_cents: 4200
+))</pre>
+            </div>
+
+            <div>
+              <div class="acta-step-label">
+                <span class="acta-step-num">3</span>
+                Reload — the row appears here.
+              </div>
+            </div>
+          </div>
+
+          <div class="acta-empty-footer">
+            <a href="https://github.com/whoojemaflip/acta#readme" target="_blank" rel="noopener" class="acta-empty-link">↗ README</a>
+            <a href="https://github.com/whoojemaflip/acta#defining-events" target="_blank" rel="noopener" class="acta-empty-link">↗ Defining events</a>
+            <a href="https://github.com/whoojemaflip/acta#commands" target="_blank" rel="noopener" class="acta-empty-link">↗ Commands</a>
+            <span class="acta-empty-footer-status">
+              <span class="acta-status-dot">●</span> tailing · 0 events
+            </span>
+          </div>
+        </div>
+
+      <% elsif @events.empty? %>
+        <%# ── Zero matches ────────────────────────────────────────────── %>
+        <div class="acta-empty-filters">
+          <strong>0 matches</strong>
+          Loosen filters or <a href="<%= acta_filter_url(event_type: nil, stream_type: nil, actor_id: nil, stream_key: nil, q: nil) %>" style="color:var(--accent);text-decoration:none">clear them</a>.
+        </div>
+
+      <% else %>
+        <%# ── Event rows ──────────────────────────────────────────────── %>
+        <% @events.each do |event| %>
+          <div
+            class="acta-row<%= ' selected' if params[:selected] == event.uuid %>"
+            data-href="<%= acta_filter_url(selected: event.uuid) %>"
+          >
+            <span class="acta-row-time" title="<%= acta_fmt_abs(event.recorded_at) %>">
+              <%= acta_fmt_time(event.recorded_at) %>
+            </span>
+
+            <span class="acta-row-dot">
+              <span class="acta-dot" style="background:<%= acta_dot_color(event.event_type) %>"></span>
+            </span>
+
+            <span class="acta-row-type"><%= event.event_type %></span>
+
+            <span class="acta-row-stream">
+              <span class="acta-dim"><%= event.stream_type %></span>
+              <span class="acta-dim" style="opacity:0.5">/</span><%
+              %><a
+                href="<%= acta_filter_url(stream_key: event.stream_key) %>"
+                class="acta-stream-key"
+                title="grep stream_key = <%= h event.stream_key %>"
+                onClick="event.stopPropagation()"
+              ><%= event.stream_key %></a><%
+              if event.payload.present? %>
+                <span class="acta-payload-preview acta-dim"><%= acta_preview_payload(event.payload) %></span><%
+              end %>
+            </span>
+
+            <span class="acta-row-actor">
+              <%= event.actor_id %><% if event.source.present? %> <span style="opacity:0.5">·</span> <%= event.source %><% end %>
+            </span>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+
+    <%# Pagination strip -%>
+    <div class="acta-pagination">
+      <span class="acta-sans"><%= @filtered_count %> matches</span>
+      <span class="acta-dim">·</span>
+      <span class="acta-sans">page <%= @page + 1 %>/<%= @total_pages %></span>
+      <div class="acta-pagination-btns">
+        <% if @page > 0 %>
+          <a href="<%= acta_filter_url(page: @page - 1) %>" class="acta-page-btn acta-sans">↑ newer</a>
+        <% else %>
+          <span class="acta-page-btn acta-sans disabled">↑ newer</span>
+        <% end %>
+        <% if @page < @total_pages - 1 %>
+          <a href="<%= acta_filter_url(page: @page + 1) %>" class="acta-page-btn acta-sans">older ↓</a>
+        <% else %>
+          <span class="acta-page-btn acta-sans disabled">older ↓</span>
+        <% end %>
+      </div>
+    </div>
+  </main>
+
+  <%# ── Right detail panel (when a row is selected) ─────────────────── %>
+  <% if @selected_event %>
+    <% ev = @selected_event %>
+    <aside class="acta-detail">
+      <div class="acta-detail-header">
+        <span class="acta-dot" style="background:<%= acta_dot_color(ev.event_type) %>"></span>
+        <span class="acta-detail-type"><%= ev.event_type %></span>
+        <span class="acta-detail-version">v<%= ev.event_version %></span>
+        <a href="<%= acta_filter_url(selected: nil) %>" class="acta-detail-close" title="Close">✕</a>
+      </div>
+
+      <div class="acta-detail-body">
+        <div class="acta-kv">
+          <span class="acta-kv-key">uuid</span>
+          <span class="acta-kv-val"><%= ev.uuid %></span>
+        </div>
+        <div class="acta-kv">
+          <span class="acta-kv-key">recorded_at</span>
+          <span class="acta-kv-val"><%= acta_fmt_abs(ev.recorded_at) %></span>
+        </div>
+        <div class="acta-kv">
+          <span class="acta-kv-key">occurred_at</span>
+          <span class="acta-kv-val"><%= acta_fmt_abs(ev.occurred_at) %></span>
+        </div>
+        <div class="acta-kv">
+          <span class="acta-kv-key">stream</span>
+          <span class="acta-kv-val">
+            <a href="<%= acta_filter_url(stream_type: ev.stream_type, stream_key: ev.stream_key, selected: nil) %>">
+              <%= ev.stream_type %>/<%= ev.stream_key %><% if ev.respond_to?(:stream_sequence) && ev.stream_sequence.present? %> #<%= ev.stream_sequence %><% end %>
+            </a>
+          </span>
+        </div>
+        <div class="acta-kv">
+          <span class="acta-kv-key">actor</span>
+          <span class="acta-kv-val">
+            <a href="<%= acta_filter_url(actor_id: ev.actor_id, selected: nil) %>"><%= ev.actor_type %>/<%= ev.actor_id %></a>
+          </span>
+        </div>
+        <div class="acta-kv">
+          <span class="acta-kv-key">source</span>
+          <span class="acta-kv-val"><%= ev.source %></span>
+        </div>
+
+        <div class="acta-section-label">payload</div>
+        <pre class="acta-json-block"><%= acta_pretty_json(ev.payload) %></pre>
+
+        <% if ev.respond_to?(:metadata) && ev.metadata.present? && ev.metadata != {} %>
+          <div class="acta-section-label">metadata</div>
+          <pre class="acta-json-block"><%= acta_pretty_json(ev.metadata) %></pre>
+        <% end %>
+
+        <div style="margin-top:18px">
+          <a href="<%= url_for(controller: "acta/web/events", action: "show", id: ev.uuid) %>" class="acta-sans" style="color:var(--accent);text-decoration:none;font-size:10px">
+            ↗ permalink
+          </a>
+        </div>
+      </div>
+    </aside>
+  <% end %>
+
+</div>
