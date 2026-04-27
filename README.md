@@ -157,6 +157,43 @@ Each projection's `truncate!` runs, then the log is replayed through
 projections. Reactors are skipped during replay (replay is a state
 operation, not a notification one).
 
+#### Guarding projection-owned tables
+
+Once a model is maintained by a projection, *every* other write path
+(controllers, console one-offs, rake tasks, callbacks on other models)
+silently breaks the event log as the source of truth. Opt into a runtime
+guard with `acta_managed!`:
+
+```ruby
+class Order < ApplicationRecord
+  acta_managed!   # writes outside an Acta::Projection raise ProjectionWriteError
+end
+```
+
+Inside an `Acta::Projection` `on EventClass do |e| ... end` block (and
+during `Acta.rebuild!`'s truncate phase), `Acta::Projection.applying?`
+is true and writes pass through. From a controller, console, or
+unrelated callback, they raise:
+
+```ruby
+Order.update_all(status: "cancelled")
+# raise: Acta::ProjectionWriteError — Order is acta_managed!
+#        Emit an event so the projection can update the row, or wrap
+#        intentional out-of-band writes in
+#        `Acta::Projection.applying! { ... }` (fixtures, migrations,
+#        backfills).
+```
+
+For incremental migration, demote violations to warnings:
+
+```ruby
+acta_managed! on_violation: :warn
+```
+
+Test fixtures, data migrations, and one-off backfills can wrap
+intentional out-of-band writes in `Acta::Projection.applying! { ... }`
+to bypass the safety net explicitly.
+
 ### 5. Commands for validated writes
 
 ```ruby
