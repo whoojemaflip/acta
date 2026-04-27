@@ -43,8 +43,40 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Changed
 
+- **Breaking: command DSL collapses around streams and concurrency.**
+  - Removed `Acta::Command.stream` macro. Commands no longer declare or
+    inherit stream identity — events are the only thing that carries
+    stream config.
+  - Removed `Acta::Command.on_concurrent_write` macro and the
+    capture-at-instantiation / assert-at-emit machinery on Command
+    instances.
+  - Renamed `Acta.emit(event, expected_sequence: N)` keyword to
+    `if_version: N`.
+  - Renamed `Acta::ConcurrencyConflict` → `Acta::VersionConflict`. Its
+    `expected_sequence` / `actual_sequence` readers are now
+    `expected_version` / `actual_version`.
+  - `emits` is now variadic — `emits EventA, EventB, ...` for commands
+    that conditionally emit different events. It's purely documentary;
+    no stream side effects, no runtime contract.
+
+  Apps that need optimistic locking write it explicitly using the new
+  public primitive:
+  ```ruby
+  version = Acta.version_of(stream_type: :order, stream_key: order_id)
+  emit OrderRenamed.new(...), if_version: version
+  ```
+  Two lines, fully visible, no macro magic. Most commands need none of
+  this and lose nothing.
+
 - `Acta.register_projection` is now idempotent — registering the same
   projection class twice is a no-op instead of double-dispatching events.
+
+### Added
+
+- `Acta.version_of(stream_type:, stream_key:)` — public class method
+  returning the current high-water mark for a stream (0 for fresh
+  streams). Pair with `Acta.emit(..., if_version:)` for optimistic
+  locking.
 
 ## [0.1.1]
 

@@ -30,11 +30,11 @@ module Acta
         raise unless stream_conflict?(e)
 
         actual = current_stream_max(stream_type, stream_key) || 0
-        raise Acta::ConcurrencyConflict.new(
+        raise Acta::VersionConflict.new(
           stream_type:,
           stream_key:,
-          expected_sequence: sequence,
-          actual_sequence: actual
+          expected_version: sequence,
+          actual_version: actual
         )
       end
 

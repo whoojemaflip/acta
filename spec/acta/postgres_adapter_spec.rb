@@ -60,7 +60,7 @@ RSpec.describe Acta::Adapters::Postgres do
     expect(Acta::Record.find_by(uuid: e2.uuid).stream_sequence).to eq(2)
   end
 
-  it "raises ConcurrencyConflict on duplicate stream sequence" do
+  it "raises VersionConflict on duplicate stream sequence" do
     Acta.emit(event_class.new(book_id: "w_1", new_name: "First"))
 
     adapter = Acta.adapter
@@ -68,7 +68,7 @@ RSpec.describe Acta::Adapters::Postgres do
 
     expect {
       Acta.emit(event_class.new(book_id: "w_1", new_name: "Conflict"))
-    }.to raise_error(Acta::ConcurrencyConflict)
+    }.to raise_error(Acta::VersionConflict)
   end
 
   it "enforces uuid uniqueness" do

@@ -33,11 +33,11 @@ module Acta
     @adapter = nil
   end
 
-  def self.emit(event, actor: nil, expected_sequence: nil)
+  def self.emit(event, actor: nil, if_version: nil)
     event.actor = actor if actor
     raise MissingActor, "No actor for emit of #{event.event_type} (set Acta::Current.actor or pass actor:)" if event.actor.nil?
 
-    assert_expected_sequence!(event, expected_sequence) unless expected_sequence.nil?
+    assert_version!(event, if_version) unless if_version.nil?
 
     ActiveSupport::Notifications.instrument("acta.event_emitted", event:, event_type: event.event_type) do
       Record.transaction(requires_new: true) do
@@ -162,25 +162,31 @@ module Acta
   end
   private_class_method :handler_kind
 
-  def self.assert_expected_sequence!(event, expected)
+  # Public: read the current high-water mark for a stream. Returns 0 for
+  # streams that have never been emitted to. Use the result with
+  # `Acta.emit(..., if_version: version)` for optimistic locking.
+  def self.version_of(stream_type:, stream_key:)
+    Record
+      .where(stream_type: stream_type.to_s, stream_key: stream_key)
+      .maximum(:stream_sequence) || 0
+  end
+
+  def self.assert_version!(event, expected)
     if event.stream_type.nil? || event.stream_key.nil?
-      raise ArgumentError, "expected_sequence requires the event to declare a stream"
+      raise ArgumentError, "if_version requires the event to declare a stream"
     end
 
-    actual = Record
-               .where(stream_type: event.stream_type, stream_key: event.stream_key)
-               .maximum(:stream_sequence) || 0
-
+    actual = version_of(stream_type: event.stream_type, stream_key: event.stream_key)
     return if actual == expected
 
-    raise ConcurrencyConflict.new(
+    raise VersionConflict.new(
       stream_type: event.stream_type,
       stream_key: event.stream_key,
-      expected_sequence: expected,
-      actual_sequence: actual
+      expected_version: expected,
+      actual_version: actual
     )
   end
-  private_class_method :assert_expected_sequence!
+  private_class_method :assert_version!
 
   def self.events
     EventsQuery.new(adapter.fetch_records)

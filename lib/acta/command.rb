@@ -9,99 +9,55 @@ module Acta
         new(**params).call
       end
 
-      # Declare the aggregate this command operates on. Two forms:
+      # Declare the event class(es) this command may emit. Variadic so
+      # commands that conditionally emit different events for the same
+      # aggregate can list every option:
       #
-      #   stream :order, key: :order_id       # explicit declaration
-      #   emits OrderPlaced                    # inherit from the event class
+      #   class RegisterTrail < Acta::Command
+      #     emits TrailRegistered, TrailUpdated
       #
-      # When both are given, the explicit `stream` takes precedence.
-      def stream(type, key:)
-        @stream_type = type.to_s
-        @stream_key_attribute = key
-      end
-
-      # Declare the primary event class this command emits. The command
-      # inherits stream_type and stream_key_attribute from that event,
-      # removing the duplicate declaration in the common case:
-      #
-      #   class OrderRenamed < Acta::Event
-      #     stream :order, key: :order_id
-      #     # ...
+      #     def call
+      #       existing = Trail.find_by(id:)
+      #       existing ? emit(TrailUpdated.new(...)) : emit(TrailRegistered.new(...))
+      #     end
       #   end
       #
-      #   class RenameOrder < Acta::Command
-      #     emits OrderRenamed
-      #     on_concurrent_write :raise
-      #     # ...
-      #   end
-      def emits(event_class)
-        unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
-          raise ArgumentError,
-                "emits expects a class with stream_type and stream_key_attribute (typically an Acta::Event subclass)"
+      # The runtime does not enforce that only the listed events are
+      # emitted — `emits` is a hint, not a contract. It exists for
+      # documentation and for downstream tooling (e.g. introspection
+      # of which commands write to which streams).
+      def emits(*event_classes)
+        raise ArgumentError, "emits requires at least one event class" if event_classes.empty?
+
+        event_classes.each do |event_class|
+          unless event_class.respond_to?(:stream_type) && event_class.respond_to?(:stream_key_attribute)
+            raise ArgumentError,
+                  "emits expects classes with stream_type and stream_key_attribute " \
+                  "(typically Acta::Event subclasses), got #{event_class.inspect}"
+          end
         end
 
-        @emitted_event_class = event_class
+        @emitted_event_classes = event_classes
       end
 
-      attr_reader :emitted_event_class, :concurrent_write_action
-
-      def stream_type
-        @stream_type || @emitted_event_class&.stream_type
+      def emitted_event_classes
+        @emitted_event_classes || []
       end
 
-      def stream_key_attribute
-        @stream_key_attribute || @emitted_event_class&.stream_key_attribute
-      end
-
-      # Declare how the command handles concurrent writes to its stream.
-      #
-      #   on_concurrent_write :raise   # capture sequence, raise ConcurrencyConflict on drift
-      #   on_concurrent_write :ignore  # explicit opt-out — write unconditionally
-      VALID_CONCURRENT_WRITE_ACTIONS = %i[ raise ignore ].freeze
-
-      def on_concurrent_write(action)
-        unless VALID_CONCURRENT_WRITE_ACTIONS.include?(action)
-          raise ArgumentError,
-                "on_concurrent_write must be one of #{VALID_CONCURRENT_WRITE_ACTIONS.inspect}, got #{action.inspect}"
-        end
-
-        @concurrent_write_action = action
+      def emitted_event_class
+        emitted_event_classes.first
       end
     end
 
     def initialize(**params)
       super
       raise InvalidCommand, self unless valid?
-
-      capture_stream_sequence! if self.class.concurrent_write_action == :raise
     end
 
-    def stream_type
-      self.class.stream_type
-    end
-
-    def stream_key
-      attribute = self.class.stream_key_attribute
-      return nil if attribute.nil?
-
-      public_send(attribute)
-    end
-
-    def emit(event)
-      Acta.emit(event, expected_sequence: @captured_sequence)
-    end
-
-    private
-
-    def capture_stream_sequence!
-      if stream_type.nil? || stream_key.nil?
-        raise ConfigurationError,
-              "on_concurrent_write on #{self.class} requires a stream declaration (via `stream` or `emits`) with a present key"
-      end
-
-      @captured_sequence = Record
-                             .where(stream_type:, stream_key:)
-                             .maximum(:stream_sequence) || 0
+    # Emit an event. Pass `if_version:` to assert the stream's current
+    # high-water mark for optimistic locking — see Acta.version_of.
+    def emit(event, if_version: nil)
+      Acta.emit(event, if_version: if_version)
     end
   end
 end
