@@ -43,8 +43,49 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Changed
 
+- **Breaking: command DSL collapses around streams, concurrency, and
+  emit declarations.**
+  - Removed `Acta::Command.stream` macro. Commands no longer declare or
+    inherit stream identity — events are the only thing that carries
+    stream config.
+  - Removed `Acta::Command.on_concurrent_write` macro and the
+    capture-at-instantiation / assert-at-emit machinery on Command
+    instances.
+  - Removed `Acta::Command.emits` macro and `emitted_event_class(es)`.
+    The framework no longer asks commands to declare what they emit;
+    `def call` is the only source of truth. The "primary event" concept
+    that came with single-arg `emits` was a fiction once commands could
+    legitimately emit zero, one, or many events.
+  - `Acta::Command.call` now returns the command instance (was: the
+    return value of the user's `#call` method). Read events back via
+    `cmd.emitted_events` — an array of every event emitted during the
+    invocation, in order. Idempotent commands return an instance with
+    an empty array.
+  - Renamed `Acta.emit(event, expected_sequence: N)` keyword to
+    `if_version: N`.
+  - Renamed `Acta::ConcurrencyConflict` → `Acta::VersionConflict`. Its
+    `expected_sequence` / `actual_sequence` readers are now
+    `expected_version` / `actual_version`.
+
+  `Acta::Command` now has four moving parts: `param`, `validates`,
+  `call`, `emit`. Apps that need optimistic locking write it explicitly
+  using the new public primitive:
+  ```ruby
+  version = Acta.version_of(stream_type: :order, stream_key: order_id)
+  emit OrderRenamed.new(...), if_version: version
+  ```
+  Two lines, fully visible, no macro magic. Most commands need none of
+  this and lose nothing.
+
 - `Acta.register_projection` is now idempotent — registering the same
   projection class twice is a no-op instead of double-dispatching events.
+
+### Added
+
+- `Acta.version_of(stream_type:, stream_key:)` — public class method
+  returning the current high-water mark for a stream (0 for fresh
+  streams). Pair with `Acta.emit(..., if_version:)` for optimistic
+  locking.
 
 ## [0.1.1]
 

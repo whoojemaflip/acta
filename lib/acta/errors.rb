@@ -34,17 +34,17 @@ module Acta
     end
   end
 
-  class ConcurrencyConflict < Error
-    attr_reader :stream_type, :stream_key, :expected_sequence, :actual_sequence
+  class VersionConflict < Error
+    attr_reader :stream_type, :stream_key, :expected_version, :actual_version
 
-    def initialize(stream_type:, stream_key:, expected_sequence:, actual_sequence:)
+    def initialize(stream_type:, stream_key:, expected_version:, actual_version:)
       @stream_type = stream_type
       @stream_key = stream_key
-      @expected_sequence = expected_sequence
-      @actual_sequence = actual_sequence
+      @expected_version = expected_version
+      @actual_version = actual_version
       super(
-        "Concurrent write on stream #{stream_type}/#{stream_key}: " \
-        "expected to write at sequence #{expected_sequence}, stream is at #{actual_sequence}"
+        "Version conflict on stream #{stream_type}/#{stream_key}: " \
+        "expected version #{expected_version}, stream is at version #{actual_version}"
       )
     end
   end

@@ -199,9 +199,6 @@ to bypass the safety net explicitly.
 ```ruby
 # app/commands/place_order.rb
 class PlaceOrder < Acta::Command
-  emits OrderPlaced
-  on_concurrent_write :raise
-
   param :customer_id, :string
   param :total_cents, :integer
 
@@ -214,27 +211,51 @@ class PlaceOrder < Acta::Command
   end
 end
 
+cmd = PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+cmd.emitted_events.first.order_id   # => "order_…"
+```
+
+`Acta::Command.call` returns the command instance. The instance carries
+the params, the `emitted_events` array (every event emitted during
+`#call`, in order), and any state the command exposed via
+`attr_reader`. Callers that don't care about the events ignore the
+return value:
+
+```ruby
 PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
 ```
 
-`emits OrderPlaced` derives the command's `stream_type` and
-`stream_key_attribute` from the event class's own declaration — no
-duplicate `stream :order, key: :order_id` on the command. Use the
-explicit `stream :order, key: :order_id` form instead if the command
-operates on a different aggregate than its primary event, or if it
-doesn't emit an Acta event.
+Commands can emit zero, one, or many events. The framework does not
+invent a "primary" event — when a command emits more than one, the
+caller (who knows the domain) picks what matters from
+`cmd.emitted_events`.
 
-`on_concurrent_write :raise` captures the stream's current sequence at
-command instantiation and asserts the stream hasn't moved by emit time.
-If another writer has appended to the stream in between, the command
-raises `Acta::ConcurrencyConflict` — callers retry with fresh state or
-surface the collision to the user instead of silently clobbering it.
+### Optimistic locking (high-water mark)
 
-`on_concurrent_write :ignore` is the explicit opt-out: same runtime
-behaviour as omitting the declaration entirely (write unconditionally,
-last-write-wins), but makes the intent legible. Use it when concurrent
-writes to this aggregate are expected and acceptable — the declaration
-tells reviewers "I thought about concurrency here, it's fine."
+Every stream has a high-water mark — the `stream_sequence` of its most
+recent event. `Acta.version_of` reads it; `Acta.emit(..., if_version: N)`
+asserts it. Use the pair when you need optimistic locking against
+concurrent writers to the same aggregate:
+
+```ruby
+class RenameOrder < Acta::Command
+  param :order_id, :string
+  param :new_name, :string
+
+  def call
+    version = Acta.version_of(stream_type: :order, stream_key: order_id)
+    # ... do work that depends on the current state ...
+    emit OrderRenamed.new(order_id:, new_name:), if_version: version
+  end
+end
+```
+
+If another writer has appended to the stream between `version_of` and
+`emit`, the emit raises `Acta::VersionConflict` — callers retry with
+fresh state or surface the collision instead of silently clobbering it.
+`if_version: 0` asserts a fresh stream (no events yet). Most commands
+don't need this; reach for it when concurrent writes to the same
+aggregate are realistic and lost-update would be a bug.
 
 ## Identity: generate IDs in commands, never in projections
 
@@ -245,8 +266,6 @@ carries it in its payload, and the projection reads it back out**.
 
 ```ruby
 class CreateOrder < Acta::Command
-  emits OrderCreated
-
   param :customer_id, :string
   param :total_cents, :integer
 
