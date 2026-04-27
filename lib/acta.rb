@@ -140,7 +140,7 @@ module Acta
   end
 
   def self.rebuild!
-    Projection.applying! { projection_classes.each(&:truncate!) }
+    Projection.applying! { truncate_projections! }
     Record.order(:id).find_each do |record|
       event = events.find_by_uuid(record.uuid)
       dispatch(event, kind: :projection)
@@ -150,6 +150,83 @@ module Acta
       raise ReplayError.new(record:, original: e)
     end
   end
+
+  # Truncate all projections in FK-safe order. Wrapped in `Projection.applying!`
+  # by `rebuild!` so projection-managed AR models (`acta_managed!`) accept the
+  # delete_all calls instead of raising `ProjectionWriteError`.
+  def self.truncate_projections!
+    legacy, declared = projection_classes.partition { |p| p.truncated_classes.empty? }
+
+    legacy.each(&:truncate!)
+    truncate_order(declared).each(&:truncate!)
+  end
+  private_class_method :truncate_projections!
+
+  # Order projections so that, for every belongs_to A → B where A and B are
+  # owned by different projections, the projection owning A truncates first.
+  # This deletes children before parents and keeps Acta.rebuild! safe under
+  # FK constraints regardless of registration order.
+  def self.truncate_order(projections)
+    return projections if projections.length < 2
+
+    owner_of = projections.each_with_object({}) do |projection, acc|
+      projection.truncated_classes.each { |klass| acc[klass] = projection }
+    end
+
+    # `before[parent] = [children]`: every child projection must run before
+    # the parent so the FK-bearing rows are gone by the time the parent
+    # tries to delete the rows they reference.
+    before = Hash.new { |h, k| h[k] = [] }
+    projections.each do |child_projection|
+      child_projection.truncated_classes.each do |child_class|
+        child_class.reflect_on_all_associations(:belongs_to).each do |reflection|
+          next if reflection.polymorphic?
+
+          parent_class = begin
+            reflection.klass
+          rescue StandardError
+            next
+          end
+
+          parent_owner = owner_of[parent_class]
+          next if parent_owner.nil? || parent_owner == child_projection
+
+          before[parent_owner] << child_projection unless before[parent_owner].include?(child_projection)
+        end
+      end
+    end
+
+    sorted = topological_sort(projections, before)
+    sorted || raise(TruncateOrderError.new(projections))
+  end
+  private_class_method :truncate_order
+
+  # Given `before[node] = [predecessors]`, returns nodes ordered so each
+  # predecessor appears before the node it constrains, or nil if the graph
+  # has a cycle. Stable: preserves input order among nodes that don't
+  # constrain each other.
+  def self.topological_sort(nodes, before)
+    visited = {}
+    result = []
+
+    visit = lambda do |node|
+      case visited[node]
+      when :done then return true
+      when :visiting then return false
+      end
+
+      visited[node] = :visiting
+      before[node].each { |predecessor| return false unless visit.call(predecessor) }
+      visited[node] = :done
+      result << node
+      true
+    end
+
+    nodes.each { |node| return nil unless visit.call(node) }
+
+    result
+  end
+  private_class_method :topological_sort
 
   def self.handler_kind(handler_class)
     if handler_class <= Projection

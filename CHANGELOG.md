@@ -12,6 +12,17 @@ breaking changes as the API settles through real-world consumer integration.
 
 ### Added
 
+- `Acta::Projection.truncates(*ar_classes)` — class macro for declaring
+  the AR classes a projection owns. Used both as the default `truncate!`
+  target list (`delete_all` on each in declared order) and as input to
+  `Acta.rebuild!`'s cross-projection ordering: projections whose tables
+  are FK-referenced by another projection's tables now run first, so
+  children are deleted before their parents — independent of registration
+  order. Cycles raise `Acta::TruncateOrderError`. Projections without
+  `truncates` declarations keep their existing registration-order
+  behavior. The truncate phase runs inside `Projection.applying!`, so
+  `acta_managed!` models truncate cleanly. Closes #3.
+
 - `acta_managed!` AR class macro — opt-in safety net for projection-owned
   models. Once an AR model becomes a projection, writes from anywhere
   other than the projection bypass the event log and break

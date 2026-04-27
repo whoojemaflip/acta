@@ -106,9 +106,7 @@ are a derived view:
 ```ruby
 # app/projections/order_projection.rb
 class OrderProjection < Acta::Projection
-  def self.truncate!
-    Order.delete_all
-  end
+  truncates Order
 
   on OrderPlaced do |event|
     Order.create!(
@@ -124,6 +122,23 @@ class OrderProjection < Acta::Projection
   end
 end
 ```
+
+`truncates Order` declares the AR classes this projection owns. Acta uses
+the declaration both as the default `truncate!` (`delete_all` on each in
+order) and as input to cross-projection ordering: when one projection's
+tables FK-reference another's, the children are truncated first
+regardless of registration order. List multiple in safe within-projection
+order (children before parents):
+
+```ruby
+class CatalogProjection < Acta::Projection
+  truncates Trail, Zone   # Trail.zone_id → Zone.id, so Trail first
+end
+```
+
+Override `truncate!` directly when the default isn't enough — `truncates`
+still drives global FK ordering, while the override provides whatever
+custom teardown the projection needs.
 
 Projections run synchronously inside the emit transaction. If they raise,
 the entire emit rolls back — the event row isn't written, reactors don't
@@ -153,9 +168,10 @@ Replay at any time:
 Acta.rebuild!
 ```
 
-Each projection's `truncate!` runs, then the log is replayed through
-projections. Reactors are skipped during replay (replay is a state
-operation, not a notification one).
+Each projection's `truncate!` runs in FK-safe order (derived from the
+`truncates` declarations), then the log is replayed through projections.
+Reactors are skipped during replay (replay is a state operation, not a
+notification one).
 
 #### Guarding projection-owned tables
 
