@@ -5,8 +5,24 @@ module Acta
     class << self
       alias_method :param, :attribute
 
+      # Instantiate the command with the given params, run it, and return
+      # the primary emitted event when an `emits` declaration is present —
+      # so callers don't have to dig the new aggregate's id out via a
+      # roundtrip (`existing.id || SecureRandom.uuid_v7` boilerplate at
+      # every call site disappears). Returns `nil` if the command was
+      # idempotent and emitted nothing.
+      #
+      # Commands without an `emits` declaration retain the legacy
+      # behavior — `Command.call` returns whatever the user's `#call`
+      # method returned. Adding `emits` to an existing command is the
+      # opt-in signal to switch to event-returning semantics.
       def call(**params)
-        new(**params).call
+        instance = new(**params)
+        result = instance.call
+
+        return result if emitted_event_class.nil?
+
+        instance.primary_emitted_event
       end
 
       # Declare the aggregate this command operates on. Two forms:
@@ -89,6 +105,21 @@ module Acta
 
     def emit(event)
       Acta.emit(event, expected_sequence: @captured_sequence)
+      emitted_events << event
+      event
+    end
+
+    def emitted_events
+      @emitted_events ||= []
+    end
+
+    # The first emitted event whose class matches the `emits` declaration;
+    # nil if the command was idempotent and emitted nothing matching.
+    def primary_emitted_event
+      primary_class = self.class.emitted_event_class
+      return emitted_events.last if primary_class.nil?
+
+      emitted_events.find { |event| event.is_a?(primary_class) }
     end
 
     private

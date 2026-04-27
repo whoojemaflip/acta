@@ -177,8 +177,20 @@ class PlaceOrder < Acta::Command
   end
 end
 
-PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+event = PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+event.order_id   # => "order_…" — the id the command generated
 ```
+
+When a command has an `emits` declaration, `Command.call` returns the
+emitted event (matched by class). Callers can grab `event.order_id`
+without threading boilerplate like `existing&.id || SecureRandom.uuid_v7`
+through their controllers and importers. Idempotent no-op runs return
+`nil`. Cascade commands that emit additional events (see #5) return the
+primary event matching `emits`; the rest are accessible on the instance
+via `command_instance.emitted_events`.
+
+Commands without `emits` keep the legacy passthrough behavior —
+`Command.call` returns whatever the user's `#call` returned.
 
 `emits OrderPlaced` derives the command's `stream_type` and
 `stream_key_attribute` from the event class's own declaration — no

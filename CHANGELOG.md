@@ -10,6 +10,21 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+### Changed
+
+- `Acta::Command.call` now returns the primary emitted event when the
+  command has an `emits` declaration. The "primary" event is the first
+  emitted event whose class matches `emits`. Commands that emit nothing
+  (idempotent no-ops) return `nil`. Removes the `existing&.id ||
+  SecureRandom.uuid_v7` boilerplate that callers were threading through
+  to recover the new aggregate's id. Commands without an `emits`
+  declaration retain the legacy passthrough behavior — `Command.call`
+  returns whatever the user's `#call` returned. Closes #4.
+
+  New `Command#emitted_events` returns every event emitted during the
+  current invocation (in order) for callers that need the full cascade
+  rather than just the primary.
+
 ### Added
 
 - `Acta::Testing.default_actor!(config, **attrs)` — RSpec configuration
