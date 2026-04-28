@@ -11,7 +11,7 @@ module Acta
 
       source_root File.expand_path("templates", __dir__)
 
-      class_option :database, type: :string, aliases: %i(--db),
+      class_option :database, type: :string, aliases: %i[--db],
                    desc: "The database for the events migration. By default, the current environment's primary database is used."
 
       def create_migration_file
