@@ -10,6 +10,8 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-28
+
 ### Added
 
 - Reactor `queue_as` macro and `Acta.reactor_queue` global default for
