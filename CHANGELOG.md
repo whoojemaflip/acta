@@ -10,6 +10,23 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+### Added
+
+- Reactor `queue_as` macro and `Acta.reactor_queue` global default for
+  pinning the ActiveJob queue async reactors land on. Per-class
+  declarations beat the global default; with neither set, ActiveJob's
+  `:default` queue is used. `sync!` reactors are unaffected. Closes #38.
+
+- `Acta::Testing.projection_writes_helper!(config)` adds a
+  `with_projection_writes` block helper to every RSpec example. Forwards
+  to `Acta::Projection.applying!` so blocks under it pass the
+  `acta_managed!` write guard — useful for fixtures, factories, and
+  one-off setup. Closes #33.
+
+- README now covers per-emit atomicity, what `applying!` actually does
+  (write-path safety net, *not* transaction control), and `rebuild!`
+  partial-failure behavior. Closes #34.
+
 ### Changed
 
 - Custom AM type classes consolidated under `Acta::Types::*`.
@@ -21,6 +38,19 @@ breaking changes as the API settles through real-world consumer integration.
   — these classes are internal and never appeared in user code,
   README, or specs. Breaking only for someone constructing them
   directly via `Acta::ModelType.new(...)`.
+
+- Lowered Ruby/Rails compat floor: `ruby >= 3.2`, `rails >= 7.2`
+  (was 3.4 / 8.1). CI now exercises Ruby 3.2/3.3/3.4 × Rails
+  7.2/8.0/8.1. The prior floor reflected "latest at the time" rather
+  than actual API requirements; full spec suite passes against all
+  three Rails versions. Closes #37.
+
+### Fixed
+
+- Install generator now honors `--database=foo` and writes the migration
+  to the target database's `migrations_paths` (typically
+  `db/foo_migrate/`) instead of the default `db/migrate/`. Matches AR's
+  built-in migration generator behavior. Closes #29.
 
 ## [0.2.0] — 2026-04-27
 
