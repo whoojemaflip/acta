@@ -1,0 +1,83 @@
+name: Release
+
+# Publishes the gem to rubygems.org via Trusted Publishing (OIDC). Triggered
+# by pushing a tag of the form `v*`. The workflow runs the test suite first
+# and only publishes if it's green.
+#
+# Setup (one-time):
+# 1. rubygems.org → Profile → Trusted Publishers → Add a publisher
+# 2. Repository: whoojemaflip/acta
+# 3. Workflow filename: release.yml
+# 4. Environment name: rubygems
+#
+# To cut a release:
+# 1. Bump VERSION in lib/acta/version.rb
+# 2. Move [Unreleased] → [vX.Y.Z] in CHANGELOG.md
+# 3. Commit, tag (`git tag -a vX.Y.Z -m "Release X.Y.Z"`), push tag
+# 4. The action takes over from there
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test before release
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: acta_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    env:
+      ACTA_PG_HOST: localhost
+      ACTA_PG_PORT: 5432
+      ACTA_PG_USER: postgres
+      ACTA_PG_PASSWORD: postgres
+      ACTA_PG_DATABASE: acta_test
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.1'
+          bundler-cache: true
+      - name: Run the default task
+        run: bundle exec rake
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Publish to rubygems.org
+    environment: rubygems
+
+    permissions:
+      contents: write    # GitHub Release creation
+      id-token: write    # OIDC token for rubygems Trusted Publishing
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4.1'
+          bundler-cache: true
+      - name: Release gem
+        uses: rubygems/release-gem@v1
