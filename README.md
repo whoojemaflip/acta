@@ -45,6 +45,10 @@ bin/rails db:migrate
 
 ## Usage
 
+The five sections below introduce the primitives in isolation. For
+end-to-end walkthroughs of specific scenarios, see the
+[cookbook](docs/README.md).
+
 ### 1. Define an event
 
 ```ruby
