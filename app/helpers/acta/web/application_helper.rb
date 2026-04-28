@@ -31,15 +31,39 @@ module Acta
 
       def acta_preview_payload(payload)
         return "{}" unless payload.is_a?(Hash) && payload.any?
-        payload.keys.first(3).map { |k| "#{k}=#{payload[k].inspect}" }.join(" ")
+        masked = acta_mask_encrypted(payload)
+        masked.keys.first(3).map { |k| "#{k}=#{masked[k].inspect}" }.join(" ")
       rescue StandardError
         "{}"
       end
 
       def acta_pretty_json(obj)
-        JSON.pretty_generate(obj)
+        JSON.pretty_generate(acta_mask_encrypted(obj))
       rescue StandardError
         obj.to_s
+      end
+
+      # Replace any AR::Encryption-recognized ciphertext leaf in `obj`
+      # with "********". Walks hashes and arrays; non-encrypted scalars
+      # pass through unchanged. Used by the admin UI so encrypted payload
+      # values aren't displayed as raw ciphertext envelopes.
+      ACTA_MASK = "********"
+
+      def acta_mask_encrypted(obj)
+        case obj
+        when Hash  then obj.each_with_object({}) { |(k, v), acc| acc[k] = acta_mask_encrypted(v) }
+        when Array then obj.map { |v| acta_mask_encrypted(v) }
+        when String then acta_encrypted_value?(obj) ? ACTA_MASK : obj
+        else obj
+        end
+      end
+
+      def acta_encrypted_value?(value)
+        return false unless defined?(ActiveRecord::Encryption)
+
+        ActiveRecord::Encryption.encryptor.encrypted?(value)
+      rescue StandardError
+        false
       end
 
       # Build a URL for the events index, merging +overrides+ into current params.

@@ -98,6 +98,25 @@ breaking changes as the API settles through real-world consumer integration.
   streams). Pair with `Acta.emit(..., if_version:)` for optimistic
   locking.
 
+- Per-attribute payload encryption via `attribute :token, :encrypted_string`.
+  Backed by `ActiveRecord::Encryption` — same primary/deterministic/derivation
+  keys as Rails AR-encrypted columns, same key-rotation model (append a new
+  primary, keep old keys for decryption). In-memory event values stay
+  plaintext (`event.token` returns the secret); only the serialized payload
+  written to `events.payload` is ciphertext. Resolves the issue where events
+  carrying OAuth tokens / API keys would defeat AR encryption on the
+  projection's columns by leaving cleartext copies in the audit log. Closes #1.
+- `Acta::Event.from_acta_record(envelope:, payload:)` — internal hydration
+  hook that routes payload values through `type.deserialize` before
+  construction. Used by `EventsQuery` to decrypt `:encrypted_string`
+  attributes on read; existing types are unaffected.
+- Acta::Web masks encrypted payload leaves as `********` in both the
+  row preview and the pretty-JSON detail block. Detection is
+  envelope-based (`ActiveRecord::Encryption.encryptor.encrypted?`), so
+  any AR-encrypted ciphertext in the payload is masked regardless of
+  whether the event class declares `:encrypted_string` — including
+  historical events written before the attribute was opted in.
+
 ## [0.1.1]
 
 ### Added

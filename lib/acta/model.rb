@@ -45,10 +45,12 @@ module Acta
     end
 
     def self.from_acta_hash(hash)
-      known_keys = attribute_types.keys
+      types = attribute_types
       filtered = hash.each_with_object({}) do |(k, v), acc|
         key = k.to_s
-        acc[key.to_sym] = v if known_keys.include?(key)
+        next unless types.key?(key)
+
+        acc[key.to_sym] = types[key].deserialize(v)
       end
       new(**filtered)
     end
