@@ -219,22 +219,40 @@ pattern.
 
 ## Compared to the alternatives
 
-| | AR callbacks | `ActiveSupport::Notifications` | Acta event-driven |
-|---|---|---|---|
-| Persistence | None | None | Yes — full payload, actor, timestamps |
-| Async by default | No (in tx) | No (in caller) | Yes (ActiveJob) |
-| Failure isolation | No (rolls back tx) | Sometimes | Yes (per-reactor jobs) |
-| Replay-able | No | No | Yes (the events are still there) |
-| Subscriber discovery | Reading the model file | Grep the codebase for `subscribe` | `app/reactors/` directory |
-| Test ergonomics | Stubs all the way down | Subscribe a block in spec | Built-in matchers + `test_mode` |
+| | AR callbacks | `ActiveSupport::Notifications` | [Wisper][wisper] | Acta event-driven |
+|---|---|---|---|---|
+| Persistence | None | None | None | Yes — full payload, actor, timestamps |
+| Async by default | No (in tx) | No (in caller) | No (in caller); async via wisper-sidekiq | Yes (ActiveJob) |
+| Failure isolation | No (rolls back tx) | Sometimes | Subscriber errors propagate to publisher | Yes (per-reactor jobs) |
+| Replay-able | No | No | No | Yes (the events are still there) |
+| Payload typing | AR attributes | Untyped hash | Untyped args | ActiveModel-typed attributes with validations |
+| Subscriber discovery | Reading the model file | Grep the codebase for `subscribe` | Subscriber registration code | `app/reactors/` directory |
+| Test ergonomics | Stubs all the way down | Subscribe a block in spec | wisper-rspec matchers | Built-in matchers + `test_mode` |
 
-`ActiveSupport::Notifications` is the closest cousin — it's pub/sub,
-in-process, no external dependencies. The trade is: AS::Notifications
-is fire-and-forget and ephemeral. Acta keeps the publication, gives
-you the audit log for free, and survives a process restart that's
-mid-flight on a notification (the reactor job is durable in the
-ActiveJob queue, not just an in-memory subscriber).
+[wisper]: https://github.com/krisleech/wisper
 
-Use AS::Notifications for instrumentation (metrics, traces, logs).
-Use Acta for domain events that other parts of your system need to
-react to.
+`ActiveSupport::Notifications` is the in-process, ephemeral cousin —
+fire-and-forget, no persistence, ideal for instrumentation (metrics,
+traces, logs) but a poor fit for domain events that other parts of
+the system need to react to.
+
+**Wisper** is the long-standing prior art for Rails domain pub/sub —
+publish a symbol-named event, subscribers register interest, the
+gem dispatches. It's at v3.0.0 (May 2024) with light ongoing
+maintenance; not abandoned, not actively developed either. Reach for
+Wisper when you want to decouple callbacks without buying into
+event sourcing or a persistent log: subscriptions are dynamic,
+events are untyped (any args you want), and the runtime is
+process-local. Acta differs in three load-bearing ways: events are
+**typed classes** with validated payload schemas (so a typo in a
+field name is a class-load error, not a runtime nil); subscribers
+are **after-commit + async** by default (so a flaky external API
+call doesn't roll back the publisher's transaction); and every
+publication is **persisted** in the events table (so you have an
+audit log, can replay history, and can survive a process restart
+mid-flight on a notification).
+
+The honest summary: AS::Notifications for instrumentation, Wisper
+for lightweight in-process pub/sub without persistence, Acta when
+the publication itself needs to be durable and the subscribers are
+fan-out side effects you want isolated from the request path.
