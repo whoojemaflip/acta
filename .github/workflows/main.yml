@@ -8,9 +8,57 @@ on:
   pull_request:
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: RuboCop
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Run RuboCop
+        run: bundle exec rubocop
+
+  brakeman:
+    runs-on: ubuntu-latest
+    name: Brakeman
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Run Brakeman
+        run: bundle exec brakeman --no-pager --quiet
+
+  bundler_audit:
+    runs-on: ubuntu-latest
+    name: bundler-audit
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+      - name: Run bundler-audit
+        run: bundle exec bundle-audit check --update
+
+  test:
+    runs-on: ubuntu-latest
+    name: Ruby ${{ matrix.ruby }} / Rails ${{ matrix.rails }}
 
     services:
       postgres:
@@ -28,9 +76,17 @@ jobs:
           - 5432:5432
 
     strategy:
+      fail-fast: false
       matrix:
-        ruby:
-          - '3.4.1'
+        ruby: ['3.2', '3.3', '3.4']
+        rails: ['7.2', '8.0', '8.1']
+        include:
+          - rails: '7.2'
+            gemfile: rails_7_2
+          - rails: '8.0'
+            gemfile: rails_8_0
+          - rails: '8.1'
+            gemfile: rails_8_1
 
     env:
       ACTA_PG_HOST: localhost
@@ -38,6 +94,7 @@ jobs:
       ACTA_PG_USER: postgres
       ACTA_PG_PASSWORD: postgres
       ACTA_PG_DATABASE: acta_test
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/${{ matrix.gemfile }}.gemfile
 
     steps:
       - uses: actions/checkout@v4
@@ -48,5 +105,5 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run the default task
-        run: bundle exec rake
+      - name: Run specs
+        run: bundle exec rspec

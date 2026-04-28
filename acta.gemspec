@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
   DESC
   spec.homepage = "https://github.com/whoojemaflip/acta"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.4"
+  spec.required_ruby_version = ">= 3.2"
 
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
@@ -34,8 +34,8 @@ Gem::Specification.new do |spec|
   end
   spec.require_paths = [ "lib" ]
 
-  spec.add_dependency "activejob", ">= 8.1"
-  spec.add_dependency "activemodel", ">= 8.1"
-  spec.add_dependency "activerecord", ">= 8.1"
-  spec.add_dependency "activesupport", ">= 8.1"
+  spec.add_dependency "activejob", ">= 7.2"
+  spec.add_dependency "activemodel", ">= 7.2"
+  spec.add_dependency "activerecord", ">= 7.2"
+  spec.add_dependency "activesupport", ">= 7.2"
 end

@@ -6,6 +6,26 @@ module Acta
   module Testing
     DEFAULT_ACTOR_ATTRIBUTES = { type: "system", id: "rspec", source: "test" }.freeze
 
+    # Wraps writes to `acta_managed!` AR models so the projection-write guard
+    # accepts them. Useful for fixtures, factories, and ad-hoc setup that
+    # needs to bypass the command + event + projection chain.
+    #
+    #   # spec/rails_helper.rb
+    #   require "acta/testing"
+    #   RSpec.configure do |config|
+    #     Acta::Testing.projection_writes_helper!(config)
+    #   end
+    #
+    #   # in any spec:
+    #   with_projection_writes do
+    #     Trail.create!(name: "Crank It Up", zone: zone)
+    #   end
+    module ProjectionWritesHelpers
+      def with_projection_writes(&block)
+        Acta::Projection.applying!(&block)
+      end
+    end
+
     module_function
 
     # Runs the given block with ActiveJob's :inline adapter, so async
@@ -45,6 +65,19 @@ module Acta
       config.after(:each) do
         Acta::Current.reset
       end
+    end
+
+    # Includes `with_projection_writes` into every RSpec example. The helper
+    # forwards to `Acta::Projection.applying!`, so blocks under it pass the
+    # `acta_managed!` write guard. See ProjectionWritesHelpers.
+    #
+    #   # spec/rails_helper.rb
+    #   require "acta/testing"
+    #   RSpec.configure do |config|
+    #     Acta::Testing.projection_writes_helper!(config)
+    #   end
+    def projection_writes_helper!(config)
+      config.include(ProjectionWritesHelpers)
     end
   end
 end

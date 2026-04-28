@@ -32,9 +32,9 @@ Adapters: SQLite and Postgres, both first-class.
 gem "acta"
 ```
 
-Requires Rails 8.1+ and Ruby 3.4+. Pre-1.0 — the API is still settling
-through real-world consumer integration. Pin a minor (`"~> 0.2"`) if
-you need stability across `bundle update`.
+Tested against Ruby 3.2, 3.3, 3.4 and Rails 7.2, 8.0, 8.1. Pre-1.0 —
+the API is still settling through real-world consumer integration.
+Pin a minor (`"~> 0.2"`) if you need stability across `bundle update`.
 
 Generate the events table migration:
 
@@ -42,6 +42,16 @@ Generate the events table migration:
 bin/rails generate acta:install
 bin/rails db:migrate
 ```
+
+For multi-database apps, target a specific database with `--database`:
+
+```bash
+bin/rails generate acta:install --database=events
+bin/rails db:migrate:events
+```
+
+The migration is written to that database's `migrations_paths`
+(typically `db/<database>_migrate/`).
 
 ## Usage
 
@@ -101,6 +111,28 @@ end
 
 Reactors run after-commit and default to async via ActiveJob. Use `sync!`
 to run in the caller's thread (mostly useful for tests).
+
+Pin a specific ActiveJob queue per class with `queue_as`:
+
+```ruby
+class ConfirmationEmailReactor < Acta::Reactor
+  queue_as :fast
+  on OrderPlaced do |event|
+    OrderMailer.confirmation(event.order_id).deliver_later
+  end
+end
+```
+
+Or set a global default for every reactor that doesn't declare its own:
+
+```ruby
+# config/initializers/acta.rb
+Acta.reactor_queue = :fast
+```
+
+Per-class declarations beat the global default; with neither set,
+ActiveJob's `:default` queue is used. `sync!` reactors bypass ActiveJob
+entirely, so the queue setting is ignored for them.
 
 ### 4. Project state (event-sourced)
 
@@ -213,6 +245,43 @@ acta_managed! on_violation: :warn
 Test fixtures, data migrations, and one-off backfills can wrap
 intentional out-of-band writes in `Acta::Projection.applying! { ... }`
 to bypass the safety net explicitly.
+
+#### Atomicity and replay
+
+Three related semantics that are easy to conflate:
+
+**Per-emit atomicity.** `Acta.emit` opens a `requires_new: true`
+transaction that wraps both the event row insert and every projection's
+`on EventClass` block. If any projection raises, the entire emit rolls
+back: the event row isn't persisted, other projections' writes don't
+commit, and async reactors never fan out (they're enqueued only on
+successful commit). Sync reactors also run inside this transaction —
+but their side effects (mailers sent, HTTP calls made) can't be undone
+by a rollback if they've already happened, which is why `sync!` should
+be reserved for follow-up DB writes or cases where "fired but rolled
+back" is acceptable.
+
+**`Acta::Projection.applying!` is not the transaction.** It's a separate
+concept: a thread-local flag that gates `acta_managed!` writes,
+distinguishing "projection code is running" from "someone called
+`Order.create!` from a controller." Acta sets the flag automatically
+inside projection blocks and during the truncate phase of `rebuild!`.
+Apps set it explicitly with `Acta::Projection.applying! { ... }` to
+bypass the `acta_managed!` guard for fixtures, migrations, and one-off
+backfills. Toggling the flag does *not* open or join a transaction —
+the per-emit transaction does that work, and `rebuild!` uses one
+implicit transaction per `delete_all` plus one per replayed event.
+
+**`Acta.rebuild!` partial failure.** Rebuild truncates every projected
+table first (inside one `applying!` block, in FK-safe order), then
+replays the log event-by-event through projections. If an event raises
+mid-replay, the truncate has already happened and the rebuild halts at
+that event — projected tables are in a *partially-rebuilt* state, not
+the pre-rebuild state and not the fully-replayed state. Treat any
+rebuild failure as needing investigation; once the underlying
+projection bug is fixed, re-running `rebuild!` re-truncates and starts
+over from the beginning of the log. There is no resume-from-event-N
+mode.
 
 ### 5. Commands for validated writes
 
@@ -581,6 +650,31 @@ end
 
 `with_actor` restores the surrounding actor when the block returns or
 raises.
+
+### Writing to acta_managed! models in setup
+
+Tests that need to seed `acta_managed!` AR models directly — without
+going through a command + event + projection chain — would otherwise
+trip `Acta::ProjectionWriteError`. Pull in the `with_projection_writes`
+helper:
+
+```ruby
+RSpec.configure do |config|
+  Acta::Testing.projection_writes_helper!(config)
+end
+
+# in any spec:
+with_projection_writes do
+  zone = Zone.create!(name: "Cheakamus")
+  Trail.create!(zone:, name: "Crank It Up")
+end
+```
+
+The helper forwards to `Acta::Projection.applying!`, which is the same
+flag projections use internally — so writes inside the block pass the
+guard. Outside the block, the guard is back in force. Use this for
+factories, fixtures, and one-off setup; for production code paths, emit
+events instead.
 
 ### RSpec matchers
 
