@@ -5,6 +5,8 @@ source "https://rubygems.org"
 gemspec
 
 group :development, :test do
+  gem "brakeman", require: false
+  gem "bundler-audit", require: false
   gem "irb"
   gem "pg", "~> 1.5"
   gem "railties", ">= 8.1"
