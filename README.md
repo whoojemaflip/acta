@@ -215,36 +215,100 @@ to bypass the safety net explicitly.
 ```ruby
 # app/commands/place_order.rb
 class PlaceOrder < Acta::Command
+  param :order_id, :string
   param :customer_id, :string
   param :total_cents, :integer
 
-  validates :customer_id, :total_cents, presence: true
+  validates :order_id, :customer_id, :total_cents, presence: true
   validates :total_cents, numericality: { greater_than: 0 }
 
   def call
-    order_id = "order_#{SecureRandom.uuid}"
     emit OrderPlaced.new(order_id:, customer_id:, total_cents:)
   end
 end
 
-cmd = PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
-cmd.emitted_events.first.order_id   # => "order_…"
+order_id = "order_#{SecureRandom.uuid_v7}"
+PlaceOrder.call(order_id:, customer_id: "c_1", total_cents: 4200)
+# `order_id` is in scope — use it for the redirect, response, etc.
 ```
 
-`Acta::Command.call` returns the command instance. The instance carries
-the params, the `emitted_events` array (every event emitted during
-`#call`, in order), and any state the command exposed via
-`attr_reader`. Callers that don't care about the events ignore the
-return value:
+The default pattern is **caller generates the ID, command takes it as a
+param**. Simplest possible thing — the ID is in scope at the call site,
+the command is a thin validate-and-emit shell, and there's no question
+about what `.call` returns.
+
+#### What `Command.call` returns
+
+`Acta::Command.call` returns the **command instance**. The instance
+carries the params, an `emitted_events` array (every event emitted
+during `#call`, in order), and any state the command exposed via
+`attr_reader`. **The return value of `#call` is discarded** — see the
+pitfall below.
+
+Most callers ignore the return value:
 
 ```ruby
-PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+PlaceOrder.call(order_id:, customer_id: "c_1", total_cents: 4200)
+```
+
+#### When the command should generate the ID
+
+If the ID prefix or shape is a domain concern that belongs with the
+command (and the caller would always do the same thing if you forced
+it to generate), expose the generated ID via `attr_reader`:
+
+```ruby
+class PlaceOrder < Acta::Command
+  attr_reader :order_id
+
+  param :customer_id, :string
+  param :total_cents, :integer
+
+  def call
+    @order_id = "order_#{SecureRandom.uuid_v7}"
+    emit OrderPlaced.new(order_id: @order_id, customer_id:, total_cents:)
+  end
+end
+
+cmd = PlaceOrder.call(customer_id: "c_1", total_cents: 4200)
+cmd.order_id   # => "order_018f2…"
+```
+
+This reads naturally at the call site — `cmd.order_id`, not
+`cmd.emitted_events.first.order_id` — and gives the value a stable,
+semantic name regardless of how many events the command emits or in
+what order.
+
+#### Inspecting the events
+
+When you genuinely need the event objects (for further dispatch,
+logging, or because the command emits multiple events with no single
+"primary" one), read `emitted_events`:
+
+```ruby
+cmd = PlaceOrder.call(...)
+cmd.emitted_events           # => [#<OrderPlaced ...>]
+cmd.emitted_events.first     # the only event in this case
 ```
 
 Commands can emit zero, one, or many events. The framework does not
-invent a "primary" event — when a command emits more than one, the
-caller (who knows the domain) picks what matters from
-`cmd.emitted_events`.
+invent a "primary" event — when there are several, the caller (who
+knows the domain) picks what matters from `emitted_events`.
+
+#### Pitfall: don't `return` from `#call`
+
+```ruby
+def call
+  order_id = "order_#{SecureRandom.uuid_v7}"
+  emit OrderPlaced.new(order_id:, …)
+  order_id   # ← this is silently discarded by Acta::Command.call
+end
+```
+
+A trailing expression in `#call` looks like the obvious way to surface
+the generated ID, but `Command.call` always returns the command
+instance — the body's return value is dropped. Use `attr_reader` (or
+let the caller pass the ID in) instead.
 
 ### Optimistic locking (high-water mark)
 
@@ -273,24 +337,55 @@ fresh state or surface the collision instead of silently clobbering it.
 don't need this; reach for it when concurrent writes to the same
 aggregate are realistic and lost-update would be a bug.
 
-## Identity: generate IDs in commands, never in projections
+## Identity: IDs originate at the write boundary, never in projections
 
 For event-sourced aggregates, aggregate IDs (typically UUIDs) must be
-stable across `Acta.rebuild!` and must not drift if the projected tables
-are truncated. The rule: **the command generates the ID once, the event
-carries it in its payload, and the projection reads it back out**.
+stable across `Acta.rebuild!` and must not drift if the projected
+tables are truncated. The rule: **the ID is generated once at the
+write boundary, the event carries it in its payload, and the
+projection reads it back out**.
+
+"Write boundary" means either the caller of the command, or the
+command itself — whichever owns the ID's shape. Both are correct;
+pick by where the prefix/format convention lives.
 
 ```ruby
+# Pattern A — caller generates (default; what you'll usually want):
 class CreateOrder < Acta::Command
+  param :order_id, :string
   param :customer_id, :string
   param :total_cents, :integer
 
   def call
-    order_id = "order_#{SecureRandom.uuid}"    # generated here, once, forever
     emit OrderCreated.new(order_id:, customer_id:, total_cents:)
   end
 end
 
+order_id = "order_#{SecureRandom.uuid_v7}"
+CreateOrder.call(order_id:, customer_id: "c_1", total_cents: 4200)
+
+# Pattern B — command generates (when the prefix/shape is a domain
+# concern of the command itself):
+class CreateOrder < Acta::Command
+  attr_reader :order_id
+
+  param :customer_id, :string
+  param :total_cents, :integer
+
+  def call
+    @order_id = "order_#{SecureRandom.uuid_v7}"
+    emit OrderCreated.new(order_id: @order_id, customer_id:, total_cents:)
+  end
+end
+
+cmd = CreateOrder.call(customer_id: "c_1", total_cents: 4200)
+cmd.order_id   # => "order_018f2…"
+```
+
+Either way, the event carries `order_id` in its payload, and the
+projection reads it back:
+
+```ruby
 class OrderCreated < Acta::Event
   stream :order, key: :order_id
   attribute :order_id, :string
@@ -305,25 +400,27 @@ class OrderProjection < Acta::Projection
 end
 ```
 
-When `Acta.rebuild!` runs, it calls `OrderProjection.truncate!` (wiping
-the `orders` table) and replays every event. The projection reads
-`event.order_id` — which was written at the original command call — and
-re-inserts the row with the same ID. **Rebuild never regenerates IDs.**
+When `Acta.rebuild!` runs, it calls `OrderProjection.truncate!`
+(wiping the `orders` table) and replays every event. The projection
+reads `event.order_id` — which was written at the original write —
+and re-inserts the row with the same ID. **Rebuild never regenerates
+IDs.**
 
 ### What to avoid
 
 - **Generating IDs in projection code.** Non-deterministic — every
   rebuild produces new IDs, orphaning any foreign references.
-  `SecureRandom` / `Time.current` / anything stateful has no place in a
-  projection.
+  `SecureRandom` / `Time.current` / anything stateful has no place in
+  a projection.
 - **Generating IDs in the event class's `initialize`.** Same problem:
-  if the event assigns a default ID when reconstructed from a row, old
-  events would decode with fresh IDs. Events should take an explicit
-  `order_id:` attribute and require it in the payload.
+  if the event assigns a default ID when reconstructed from a row,
+  old events would decode with fresh IDs. Events should take an
+  explicit `order_id:` attribute and require it in the payload.
 - **Dropping the events table.** The event log is the primary source
-  of IDs. Purging it regenerates all IDs on next write. Back it up and
-  treat it as production-critical — even more so if other systems (a
-  separate user DB, external services) reference your aggregates' IDs.
+  of IDs. Purging it regenerates all IDs on next write. Back it up
+  and treat it as production-critical — even more so if other
+  systems (a separate user DB, external services) reference your
+  aggregates' IDs.
 
 ### Why this matters
 
