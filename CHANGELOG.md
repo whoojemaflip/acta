@@ -10,6 +10,8 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-27
+
 ### Added
 
 - `Acta::Projection.truncates(*ar_classes)` — class macro for declaring
