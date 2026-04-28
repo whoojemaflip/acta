@@ -139,8 +139,8 @@ your ActiveJob queue adapter:
   `sync!` only when the side effect is itself a DB write inside the
   same transaction, or when "fired but rolled back" is acceptable.
 
-For the trail_coach-style stack (Rails 8.x + Solid Queue), the
-default behaviour is what you want.
+On the Rails 8.x + Solid Queue default stack, the right behaviour
+falls out without extra configuration.
 
 ## Synchronous when you need it
 
