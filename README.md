@@ -246,6 +246,43 @@ Test fixtures, data migrations, and one-off backfills can wrap
 intentional out-of-band writes in `Acta::Projection.applying! { ... }`
 to bypass the safety net explicitly.
 
+#### Atomicity and replay
+
+Three related semantics that are easy to conflate:
+
+**Per-emit atomicity.** `Acta.emit` opens a `requires_new: true`
+transaction that wraps both the event row insert and every projection's
+`on EventClass` block. If any projection raises, the entire emit rolls
+back: the event row isn't persisted, other projections' writes don't
+commit, and async reactors never fan out (they're enqueued only on
+successful commit). Sync reactors also run inside this transaction —
+but their side effects (mailers sent, HTTP calls made) can't be undone
+by a rollback if they've already happened, which is why `sync!` should
+be reserved for follow-up DB writes or cases where "fired but rolled
+back" is acceptable.
+
+**`Acta::Projection.applying!` is not the transaction.** It's a separate
+concept: a thread-local flag that gates `acta_managed!` writes,
+distinguishing "projection code is running" from "someone called
+`Order.create!` from a controller." Acta sets the flag automatically
+inside projection blocks and during the truncate phase of `rebuild!`.
+Apps set it explicitly with `Acta::Projection.applying! { ... }` to
+bypass the `acta_managed!` guard for fixtures, migrations, and one-off
+backfills. Toggling the flag does *not* open or join a transaction —
+the per-emit transaction does that work, and `rebuild!` uses one
+implicit transaction per `delete_all` plus one per replayed event.
+
+**`Acta.rebuild!` partial failure.** Rebuild truncates every projected
+table first (inside one `applying!` block, in FK-safe order), then
+replays the log event-by-event through projections. If an event raises
+mid-replay, the truncate has already happened and the rebuild halts at
+that event — projected tables are in a *partially-rebuilt* state, not
+the pre-rebuild state and not the fully-replayed state. Treat any
+rebuild failure as needing investigation; once the underlying
+projection bug is fixed, re-running `rebuild!` re-truncates and starts
+over from the beginning of the log. There is no resume-from-event-N
+mode.
+
 ### 5. Commands for validated writes
 
 ```ruby
