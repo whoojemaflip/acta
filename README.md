@@ -112,6 +112,28 @@ end
 Reactors run after-commit and default to async via ActiveJob. Use `sync!`
 to run in the caller's thread (mostly useful for tests).
 
+Pin a specific ActiveJob queue per class with `queue_as`:
+
+```ruby
+class ConfirmationEmailReactor < Acta::Reactor
+  queue_as :fast
+  on OrderPlaced do |event|
+    OrderMailer.confirmation(event.order_id).deliver_later
+  end
+end
+```
+
+Or set a global default for every reactor that doesn't declare its own:
+
+```ruby
+# config/initializers/acta.rb
+Acta.reactor_queue = :fast
+```
+
+Per-class declarations beat the global default; with neither set,
+ActiveJob's `:default` queue is used. `sync!` reactors bypass ActiveJob
+entirely, so the queue setting is ignored for them.
+
 ### 4. Project state (event-sourced)
 
 For aggregates where the event log is the source of truth and AR tables

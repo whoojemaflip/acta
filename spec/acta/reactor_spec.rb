@@ -135,4 +135,80 @@ RSpec.describe Acta::Reactor, :active_record do
       expect(seen_actor).to eq(my_actor)
     end
   end
+
+  describe "queue configuration" do
+    around do |example|
+      original = Acta.reactor_queue
+      example.run
+    ensure
+      Acta.reactor_queue = original
+    end
+
+    it "lands on ActiveJob's default queue when nothing is configured" do
+      klass = Class.new(described_class) do
+        on TestEvent do |_event|
+        end
+      end
+      stub_const("DefaultQueueReactor", klass)
+
+      Acta.emit(event_class.new(thing: "x"))
+
+      expect(enqueued_jobs.first[:queue]).to eq("default")
+    end
+
+    it "uses the per-class queue_as when declared" do
+      klass = Class.new(described_class) do
+        queue_as :fast
+        on TestEvent do |_event|
+        end
+      end
+      stub_const("FastQueueReactor", klass)
+
+      Acta.emit(event_class.new(thing: "x"))
+
+      expect(enqueued_jobs.first[:queue]).to eq("fast")
+    end
+
+    it "falls back to Acta.reactor_queue when the class declares nothing" do
+      Acta.reactor_queue = :background
+      klass = Class.new(described_class) do
+        on TestEvent do |_event|
+        end
+      end
+      stub_const("GlobalQueueReactor", klass)
+
+      Acta.emit(event_class.new(thing: "x"))
+
+      expect(enqueued_jobs.first[:queue]).to eq("background")
+    end
+
+    it "per-class queue_as takes precedence over Acta.reactor_queue" do
+      Acta.reactor_queue = :slow
+      klass = Class.new(described_class) do
+        queue_as :fast
+        on TestEvent do |_event|
+        end
+      end
+      stub_const("OverrideQueueReactor", klass)
+
+      Acta.emit(event_class.new(thing: "x"))
+
+      expect(enqueued_jobs.first[:queue]).to eq("fast")
+    end
+
+    it "is ignored for sync! reactors (no job is enqueued at all)" do
+      Acta.reactor_queue = :should_not_matter
+      klass = Class.new(described_class) do
+        sync!
+        queue_as :also_should_not_matter
+        on TestEvent do |_event|
+        end
+      end
+      stub_const("SyncQueueReactor", klass)
+
+      Acta.emit(event_class.new(thing: "x"))
+
+      expect(enqueued_jobs).to be_empty
+    end
+  end
 end

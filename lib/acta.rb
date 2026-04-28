@@ -26,6 +26,18 @@ ActiveSupport.on_load(:active_record) do
 end
 
 module Acta
+  # Global default for `Acta::Reactor` ActiveJob queue. Per-class
+  # `queue_as :foo` declarations on a Reactor override this. Apps with
+  # queue priority discipline typically set this to e.g. `:fast` in an
+  # initializer; left nil, ActiveJob's `:default` queue is used.
+  class << self
+    attr_writer :reactor_queue
+  end
+
+  def self.reactor_queue
+    @reactor_queue
+  end
+
   def self.adapter
     @adapter ||= Adapters.for(Record.connection)
   end
@@ -117,7 +129,10 @@ module Acta
         event:,
         reactor_class: registration[:handler_class]
       ) do
-        ReactorJob.perform_later(
+        job = ReactorJob
+        queue = registration[:handler_class].queue_name
+        job = job.set(queue: queue) if queue
+        job.perform_later(
           event_uuid: event.uuid,
           reactor_class: registration[:handler_class].name,
           event_class: event.class.name
