@@ -651,6 +651,31 @@ end
 `with_actor` restores the surrounding actor when the block returns or
 raises.
 
+### Writing to acta_managed! models in setup
+
+Tests that need to seed `acta_managed!` AR models directly — without
+going through a command + event + projection chain — would otherwise
+trip `Acta::ProjectionWriteError`. Pull in the `with_projection_writes`
+helper:
+
+```ruby
+RSpec.configure do |config|
+  Acta::Testing.projection_writes_helper!(config)
+end
+
+# in any spec:
+with_projection_writes do
+  zone = Zone.create!(name: "Cheakamus")
+  Trail.create!(zone:, name: "Crank It Up")
+end
+```
+
+The helper forwards to `Acta::Projection.applying!`, which is the same
+flag projections use internally — so writes inside the block pass the
+guard. Outside the block, the guard is back in force. Use this for
+factories, fixtures, and one-off setup; for production code paths, emit
+events instead.
+
 ### RSpec matchers
 
 ```ruby
