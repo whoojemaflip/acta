@@ -117,6 +117,73 @@ RSpec.describe Acta::Web::ApplicationHelper do
     end
   end
 
+  describe "encrypted-value masking" do
+    before(:all) do
+      require "zlib"
+      require "active_record/encryption"
+      ActiveRecord::Encryption.configure(
+        primary_key: "test" * 8,
+        deterministic_key: "deterministic" * 4,
+        key_derivation_salt: "salt" * 8
+      )
+    end
+
+    let(:ciphertext) { ActiveRecord::Encryption.encryptor.encrypt("super-secret-token") }
+
+    describe "#acta_encrypted_value?" do
+      it "returns true for ciphertext produced by AR::Encryption" do
+        expect(helper.acta_encrypted_value?(ciphertext)).to be(true)
+      end
+
+      it "returns false for plaintext strings" do
+        expect(helper.acta_encrypted_value?("plain-token")).to be(false)
+      end
+
+      it "returns false for non-strings" do
+        expect(helper.acta_encrypted_value?(42)).to be(false)
+        expect(helper.acta_encrypted_value?(nil)).to be(false)
+      end
+    end
+
+    describe "#acta_mask_encrypted" do
+      it "masks encrypted leaves in a hash" do
+        result = helper.acta_mask_encrypted("user_id" => "u_1", "access_token" => ciphertext)
+        expect(result).to eq("user_id" => "u_1", "access_token" => "********")
+      end
+
+      it "leaves plaintext leaves alone" do
+        result = helper.acta_mask_encrypted("user_id" => "u_1", "name" => "Tom")
+        expect(result).to eq("user_id" => "u_1", "name" => "Tom")
+      end
+
+      it "recurses into nested hashes" do
+        result = helper.acta_mask_encrypted("outer" => { "token" => ciphertext, "name" => "x" })
+        expect(result).to eq("outer" => { "token" => "********", "name" => "x" })
+      end
+
+      it "recurses into arrays" do
+        result = helper.acta_mask_encrypted("tokens" => [ ciphertext, "plain" ])
+        expect(result).to eq("tokens" => [ "********", "plain" ])
+      end
+    end
+
+    describe "#acta_pretty_json" do
+      it "masks encrypted values in the pretty JSON output" do
+        json = helper.acta_pretty_json("user_id" => "u_1", "access_token" => ciphertext)
+        expect(json).to include('"access_token": "********"')
+        expect(json).not_to include(ciphertext)
+      end
+    end
+
+    describe "#acta_preview_payload" do
+      it "masks encrypted values in the row preview" do
+        preview = helper.acta_preview_payload("user_id" => "u_1", "access_token" => ciphertext)
+        expect(preview).to include('access_token="********"')
+        expect(preview).not_to include(ciphertext)
+      end
+    end
+  end
+
   describe "#acta_filter_url" do
     it "builds a query string from the merged params" do
       url = helper.acta_filter_url(event_type: "Foo")

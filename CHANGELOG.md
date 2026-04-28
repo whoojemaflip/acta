@@ -110,6 +110,12 @@ breaking changes as the API settles through real-world consumer integration.
   hook that routes payload values through `type.deserialize` before
   construction. Used by `EventsQuery` to decrypt `:encrypted_string`
   attributes on read; existing types are unaffected.
+- Acta::Web masks encrypted payload leaves as `********` in both the
+  row preview and the pretty-JSON detail block. Detection is
+  envelope-based (`ActiveRecord::Encryption.encryptor.encrypted?`), so
+  any AR-encrypted ciphertext in the payload is masked regardless of
+  whether the event class declares `:encrypted_string` — including
+  historical events written before the attribute was opted in.
 
 ## [0.1.1]
 
