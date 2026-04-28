@@ -35,24 +35,36 @@ class UserSignedUp < Acta::Event
 end
 ```
 
-The signup path emits the event:
+The signup path creates the AR record and emits the event in the
+same transaction:
 
 ```ruby
 # app/controllers/registrations_controller.rb
 class RegistrationsController < ApplicationController
   def create
-    user = User.create!(user_params)
+    ApplicationRecord.transaction do
+      user = User.create!(user_params)
 
-    Acta.emit(UserSignedUp.new(
-      user_id:       user.id,
-      email:         user.email,
-      referral_code: params[:referral_code]
-    ))
+      Acta.emit(UserSignedUp.new(
+        user_id:       user.id,
+        email:         user.email,
+        referral_code: params[:referral_code]
+      ))
+    end
 
     redirect_to dashboard_path
   end
 end
 ```
+
+The explicit `transaction` block is the load-bearing detail. `Acta.emit`
+opens its own inner transaction (with `requires_new: true`), which
+becomes a savepoint inside the outer one — so either the user row
+*and* the event row commit together, or neither does. Without the
+outer transaction these would be two independent commits, and a
+process crash or event validation error between them would leave
+you with a user who has no audit trail, no welcome email, and no
+analytics ping.
 
 That's it for the publisher. Each subscriber lives in its own file,
 declares what it cares about, and ignores everything else.
@@ -93,9 +105,10 @@ emitted event to the `events` table by default. Browse it at `/acta`
 Each reactor runs **after** the database commit that wrote the event,
 **asynchronously** by default (via ActiveJob). So:
 
-- The user record and the event row commit together. If the DB write
-  fails, the event isn't published — no welcome email to a user that
-  doesn't exist.
+- Because the controller wraps both writes in
+  `ApplicationRecord.transaction`, the user row and the event row
+  commit together. If either raises, neither is persisted — no
+  welcome email to a user that doesn't exist.
 - Each reactor enqueues its own job. The welcome email and the
   analytics ping run in parallel, isolated from each other.
 - A failing analytics call doesn't roll back the signup, doesn't
@@ -104,6 +117,30 @@ Each reactor runs **after** the database commit that wrote the event,
 - New subscribers are additive. To send a referral credit when a
   signup uses a code, write a third reactor — no change to the
   controller, the event, or the existing reactors.
+
+### A subtle caveat about reactor enqueue timing
+
+Reactors are dispatched after Acta's inner savepoint releases but
+*before* the outer transaction commits. Whether that opens a
+"reactor fired but the user write rolled back" window depends on
+your ActiveJob queue adapter:
+
+- **DB-backed queues** (Solid Queue, GoodJob, Que) — the enqueue is
+  a row insert that participates in the outer transaction. A
+  rollback un-enqueues the job. Atomic.
+- **Redis-backed queues** (Sidekiq) — the enqueue hits Redis
+  immediately and survives a rollback. Small window where the email
+  goes out but the user doesn't exist. Rails 7.2+ exposes
+  `enqueue_after_transaction_commit` to opt into deferred enqueue,
+  which closes the window.
+- **Sync reactors** (`sync!`) — run inline during dispatch. Side
+  effects (email sent, third-party API called) happen before the
+  outer commits and can't be undone by a rollback. Reach for
+  `sync!` only when the side effect is itself a DB write inside the
+  same transaction, or when "fired but rolled back" is acceptable.
+
+For the trail_coach-style stack (Rails 8.x + Solid Queue), the
+default behaviour is what you want.
 
 ## Synchronous when you need it
 
