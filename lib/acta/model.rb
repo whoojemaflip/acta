@@ -2,8 +2,8 @@
 
 require "active_model"
 require "active_model/attributes"
-require_relative "model_type"
-require_relative "array_type"
+require_relative "types/model"
+require_relative "types/array"
 
 module Acta
   class Model
@@ -11,15 +11,15 @@ module Acta
     include ActiveModel::Attributes
 
     # Accept:
-    # - a class as a type (Acta::Model / Acta::Serializable) — wrapped in ModelType
-    # - array_of: Class or array_of: :symbol — wrapped in ArrayType
+    # - a class as a type (Acta::Model / Acta::Serializable) — wrapped in Acta::Types::Model
+    # - array_of: Class or array_of: :symbol — wrapped in Acta::Types::Array
     # - standard symbol types (:string, :integer, ...) — forwarded to AM
     def self.attribute(name, type = nil, array_of: nil, **options)
       if array_of
         element = element_type_for(array_of)
-        type = Acta::ArrayType.new(element)
+        type = Acta::Types::Array.new(element)
       elsif type.is_a?(Class)
-        type = Acta::ModelType.new(type)
+        type = Acta::Types::Model.new(type)
       end
 
       if type.nil?
@@ -31,7 +31,7 @@ module Acta
 
     def self.element_type_for(target)
       case target
-      when Class then Acta::ModelType.new(target)
+      when Class then Acta::Types::Model.new(target)
       when Symbol then ActiveModel::Type.lookup(target)
       else target
       end

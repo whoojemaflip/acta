@@ -10,6 +10,18 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+### Changed
+
+- Custom AM type classes consolidated under `Acta::Types::*`.
+  `Acta::ModelType` → `Acta::Types::Model`,
+  `Acta::ArrayType` → `Acta::Types::Array`. The `:encrypted_string`
+  type was already there as `Acta::Types::EncryptedString`. The
+  user-facing API (`attribute :foo, Class`, `attribute :foo,
+  array_of: ...`, `attribute :foo, :encrypted_string`) is unchanged
+  — these classes are internal and never appeared in user code,
+  README, or specs. Breaking only for someone constructing them
+  directly via `Acta::ModelType.new(...)`.
+
 ## [0.2.0] — 2026-04-27
 
 ### Added
