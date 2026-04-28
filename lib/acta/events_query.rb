@@ -50,14 +50,13 @@ module Acta
         raise Acta::UnknownEventType, record.event_type
       end
 
-      payload = (record.payload || {}).transform_keys(&:to_sym)
       envelope = {
         uuid: record.uuid,
         occurred_at: record.occurred_at,
         recorded_at: record.recorded_at,
         actor: build_actor(record)
       }
-      klass.new(**envelope, **payload)
+      klass.from_acta_record(envelope:, payload: record.payload || {})
     end
 
     def build_actor(record)

@@ -367,6 +367,72 @@ When embedded, AR instances are **snapshots**: `event.shipping_address.street`
 returns the value at emit time, regardless of later changes. For the
 current row, call `Address.find(event.shipping_address.id)`.
 
+## Encrypted attributes
+
+Some events carry secrets — OAuth tokens, API keys, password reset
+tokens — that shouldn't sit in `events.payload` as plaintext. Acta
+supports per-attribute encryption that piggybacks on Rails'
+`ActiveRecord::Encryption` (same keys, same rotation story).
+
+```ruby
+class StravaCredentialIssued < Acta::Event
+  stream :strava_credential, key: :user_id
+
+  attribute :user_id, :string
+  attribute :access_token, :encrypted_string    # encrypted in payload
+  attribute :refresh_token, :encrypted_string
+  attribute :expires_at, :datetime
+end
+```
+
+In memory the event behaves normally — `event.access_token` is the
+plaintext you wrote. The encrypted form only appears in the serialized
+payload that's written to the events table:
+
+```
+events.payload → { "access_token": "{\"p\":\"…\",\"h\":{\"iv\":\"…\",\"at\":\"…\"}}", "user_id": "u_1", … }
+```
+
+Encryption is **per-attribute**: leave queryable fields like `user_id`
+plaintext, encrypt only the secrets.
+
+### Setup
+
+Encrypted attributes use the same configuration as Rails AR encryption.
+If you're already using `encrypts` on AR models, you have nothing to do.
+Otherwise:
+
+```bash
+bin/rails db:encryption:init
+```
+
+Then store the printed keys in `Rails.application.credentials`:
+
+```yaml
+active_record_encryption:
+  primary_key: ...
+  deterministic_key: ...
+  key_derivation_salt: ...
+```
+
+### Key rotation
+
+To rotate, append a new primary key (Rails keeps the old keys for
+decryption indefinitely):
+
+```yaml
+active_record_encryption:
+  primary_key:
+    - new_primary_key      # new writes use this
+    - old_primary_key      # old payloads still decrypt
+  deterministic_key: ...
+  key_derivation_salt: ...
+```
+
+Existing event rows stay decryptable. New emits use the new key. No
+re-encryption migration is required — the audit log accretes ciphertext
+under whichever key was current at write time.
+
 ## Testing
 
 ```ruby

@@ -62,5 +62,19 @@ module Acta
 
       public_send(attribute)
     end
+
+    # Reconstructs an event from a stored record. Routes payload values
+    # through their type's `deserialize` (so encrypted attributes decrypt
+    # back to plaintext) before construction.
+    def self.from_acta_record(envelope:, payload:)
+      types = attribute_types
+      decoded = (payload || {}).each_with_object({}) do |(k, v), acc|
+        key = k.to_s
+        next unless types.key?(key)
+
+        acc[key.to_sym] = types[key].deserialize(v)
+      end
+      new(**envelope, **decoded)
+    end
   end
 end
