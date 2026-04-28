@@ -27,14 +27,14 @@ Adapters: SQLite and Postgres, both first-class.
 
 ## Installation
 
-Not published to RubyGems. Install from git:
-
 ```ruby
 # Gemfile
-gem "acta", git: "https://github.com/whoojemaflip/acta.git"
+gem "acta"
 ```
 
-Requires Rails 8.1+ and Ruby 3.4+.
+Requires Rails 8.1+ and Ruby 3.4+. Pre-1.0 — the API is still settling
+through real-world consumer integration. Pin a minor (`"~> 0.2"`) if
+you need stability across `bundle update`.
 
 Generate the events table migration:
 
