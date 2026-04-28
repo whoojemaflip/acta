@@ -32,9 +32,9 @@ Adapters: SQLite and Postgres, both first-class.
 gem "acta"
 ```
 
-Requires Rails 8.1+ and Ruby 3.4+. Pre-1.0 — the API is still settling
-through real-world consumer integration. Pin a minor (`"~> 0.2"`) if
-you need stability across `bundle update`.
+Tested against Ruby 3.2, 3.3, 3.4 and Rails 7.2, 8.0, 8.1. Pre-1.0 —
+the API is still settling through real-world consumer integration.
+Pin a minor (`"~> 0.2"`) if you need stability across `bundle update`.
 
 Generate the events table migration:
 

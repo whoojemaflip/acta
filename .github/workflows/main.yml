@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }} / Rails ${{ matrix.rails }}
 
     services:
       postgres:
@@ -28,9 +28,17 @@ jobs:
           - 5432:5432
 
     strategy:
+      fail-fast: false
       matrix:
-        ruby:
-          - '3.4.1'
+        ruby: ['3.2', '3.3', '3.4']
+        rails: ['7.2', '8.0', '8.1']
+        include:
+          - rails: '7.2'
+            gemfile: rails_7_2
+          - rails: '8.0'
+            gemfile: rails_8_0
+          - rails: '8.1'
+            gemfile: rails_8_1
 
     env:
       ACTA_PG_HOST: localhost
@@ -38,6 +46,7 @@ jobs:
       ACTA_PG_USER: postgres
       ACTA_PG_PASSWORD: postgres
       ACTA_PG_DATABASE: acta_test
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/${{ matrix.gemfile }}.gemfile
 
     steps:
       - uses: actions/checkout@v4
