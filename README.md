@@ -43,6 +43,16 @@ bin/rails generate acta:install
 bin/rails db:migrate
 ```
 
+For multi-database apps, target a specific database with `--database`:
+
+```bash
+bin/rails generate acta:install --database=events
+bin/rails db:migrate:events
+```
+
+The migration is written to that database's `migrations_paths`
+(typically `db/<database>_migrate/`).
+
 ## Usage
 
 The five sections below introduce the primitives in isolation. For
