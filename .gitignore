@@ -9,3 +9,6 @@
 
 # rspec failure tracking
 .rspec_status
+
+# locally-built gem artifacts (released via Trusted Publishing)
+*.gem
