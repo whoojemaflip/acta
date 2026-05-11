@@ -10,6 +10,21 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-05-11
+
+### Added
+
+- `Acta.set_events_record_parent!(klass)` lets a host re-parent
+  `Acta::EventsRecord` (and therefore `Acta::Record`) onto a
+  custom abstract base. The use case is per-tenant SQLite
+  sharding: when the host's tenant-scoped abstract class and
+  `Acta::EventsRecord` are independent, Rails 8 multi-DB gives
+  them separate connection pools, which trips SQLite write
+  contention on cross-pool transactions to the same file. Sharing
+  the pool by sharing the parent class fixes this.
+  Backwards-compatible — apps that don't call the new method
+  see no change.
+
 ## [0.3.1] — 2026-05-11
 
 ### Added
