@@ -10,6 +10,19 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-05-11
+
+### Added
+
+- `Acta::EventsRecord` abstract base. `Acta::Record` now inherits
+  from it so hosts can call `connects_to` (database/role or shards)
+  on `Acta::EventsRecord` to route the events table to a specific
+  connection. Calling `connects_to` directly on `Acta::Record` was
+  rejected by ActiveRecord because the class is concrete (has
+  `table_name = "events"` set); the abstract intermediate is the
+  idiomatic Rails seam. Backwards-compatible — existing apps that
+  don't reopen `EventsRecord` see no change.
+
 ## [0.3.0] — 2026-04-28
 
 ### Added
