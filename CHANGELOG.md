@@ -10,6 +10,78 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.4.0.alpha.1] — 2026-05-22
+
+Prerelease intended for Scaff dogfooding against real prod tenant
+data ahead of the Workspaces schema migration. Promote to `0.4.0`
+once integration is green.
+
+### Added
+
+- `Acta::Upcaster` — replay-time event transformation for apps whose
+  schemas evolve. Apps declare `upcasts(event_type, from:, to:) { ... }`
+  blocks on a module that `include Acta::Upcaster`, register it with
+  `Acta.register_upcaster(Klass)`, and bump the relevant
+  `Acta::Event.event_version`. On every read path
+  (`Acta.rebuild!`, `ReactorJob#perform`, the events admin, test
+  fixtures) the pipeline walks records pre-hydration through any
+  matching upcasters, so projections see the latest shape without
+  the stored rows ever being mutated.
+- Supported transform shapes: 1-to-1 chaining across N versions,
+  1-to-many fan-out (each branch chains independently),
+  drop-on-replay (`nil` / `[]`), explicit `context.fail_replay!`,
+  and `Acta::Upcaster::NO_OP` as a terminal pass-through. Stateful
+  transforms read/write a per-replay `Acta::Upcaster::Context`.
+- `Acta::EventsQuery#all` / `#each` now iterate the scope through
+  the upcaster pipeline with a single shared `Context` across the
+  full pass, matching `Acta.rebuild!` semantics. Single-record
+  lookups (`find_by_uuid`, `first`, `last`) deliberately use a
+  fresh context — there's no prior history to seed it with — and
+  may produce incomplete output for stateful upcasters. The web
+  admin shows raw stored rows, sidestepping the question.
+  `docs/upcasters.md` carries the read-surface table.
+- `Acta::ReplayHaltedByUpcaster`, `Acta::UpcasterRegistryError`,
+  `Acta::FutureSchemaVersion` for the corresponding failure modes.
+- Testing helpers `Acta::Testing::DSL#acta_seed_event` (insert a
+  row at an arbitrary `event_version`, bypassing `Acta.emit`) and
+  `#acta_replay(events:, upcasters:)` (seed + register + rebuild
+  in one call).
+- `docs/upcasters.md` cookbook entry covering renames, fan-outs,
+  drops, stateful context, the mid-deploy reactor edge case, and
+  test patterns.
+
+No schema migration: the existing `event_version` column carries
+upcaster fence semantics. Apps without upcasters see no behavior
+change — the pipeline is a one-method-call identity pass.
+
+## [0.3.2] — 2026-05-11
+
+### Added
+
+- `Acta.set_events_record_parent!(klass)` lets a host re-parent
+  `Acta::EventsRecord` (and therefore `Acta::Record`) onto a
+  custom abstract base. The use case is per-tenant SQLite
+  sharding: when the host's tenant-scoped abstract class and
+  `Acta::EventsRecord` are independent, Rails 8 multi-DB gives
+  them separate connection pools, which trips SQLite write
+  contention on cross-pool transactions to the same file. Sharing
+  the pool by sharing the parent class fixes this.
+  Backwards-compatible — apps that don't call the new method
+  see no change.
+
+## [0.3.1] — 2026-05-11
+
+### Added
+
+- `Acta::EventsRecord` abstract base. `Acta::Record` now inherits
+  from it so hosts can call `connects_to` (database/role or shards)
+  on `Acta::EventsRecord` to route the events table to a specific
+  connection. Calling `connects_to` directly on `Acta::Record` was
+  rejected by ActiveRecord because the class is concrete (has
+  `table_name = "events"` set); the abstract intermediate is the
+  idiomatic Rails seam. Backwards-compatible — existing apps that
+  don't reopen `EventsRecord` see no change.
+
 ## [0.3.0] — 2026-04-28
 
 ### Added

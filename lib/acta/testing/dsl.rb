@@ -72,6 +72,10 @@ module Acta
       # Assert that running Acta.rebuild! twice produces the same projected
       # state. The block returns a snapshot of the relevant state (whatever
       # the app considers authoritative for this projection).
+      #
+      # Implicitly exercises any registered upcasters — both passes go
+      # through the same pipeline, so impure upcasters (state leaking
+      # outside the per-replay context) surface as a diff.
       def ensure_replay_deterministic(&snapshot)
         Acta.rebuild!
         first = snapshot.call
@@ -84,6 +88,55 @@ module Acta
           "first pass:  #{first.inspect}\n" \
           "second pass: #{second.inspect}"
         )
+      end
+
+      # Insert an event row directly into the store, bypassing `Acta.emit`.
+      # Used by upcaster specs to seed events at arbitrary `event_version`
+      # values — `Acta.emit` always stamps the current code's version, so
+      # it can't simulate a pre-migration row.
+      #
+      #   acta_seed_event(type: "ItemAdded", event_version: 1,
+      #                   payload: { "item_id" => "g_1", "item_type" => "goal" })
+      def acta_seed_event(type:, payload:, event_version: 1, actor: nil,
+                          stream_type: nil, stream_key: nil, occurred_at: nil, uuid: nil)
+        actor ||= Acta::Current.actor || Acta::Actor.new(
+          type: "system", id: "rspec", source: "test"
+        )
+
+        Acta::Record.create!(
+          uuid: uuid || SecureRandom.uuid,
+          event_type: type.to_s,
+          event_version: event_version,
+          payload: payload,
+          actor_type: actor.type,
+          actor_id: actor.id,
+          source: actor.source,
+          metadata: actor.metadata.empty? ? nil : actor.metadata,
+          stream_type: stream_type&.to_s,
+          stream_key: stream_key,
+          occurred_at: occurred_at || Time.current,
+          recorded_at: Time.current
+        )
+      end
+
+      # End-to-end upcaster fixture: register upcasters, seed events at the
+      # given versions, run `Acta.rebuild!`. The caller asserts on whatever
+      # projection state matters for the migration under test.
+      #
+      #   acta_replay(
+      #     upcasters: [Scaff::WorkspaceMigrationUpcasters],
+      #     events: [
+      #       { type: "Scaff::ItemCreated", event_version: 1,
+      #         payload: { "item_id" => "g_1", "item_type" => "goal", "title" => "Foo" } },
+      #       { type: "Scaff::ItemCreated", event_version: 1,
+      #         payload: { "item_id" => "i_2", "parent_id" => "g_1", "title" => "Bar" } }
+      #     ]
+      #   )
+      #   expect(Workspace.pluck(:id)).to eq(%w[g_1])
+      def acta_replay(events:, upcasters: [])
+        upcasters.each { |u| Acta.register_upcaster(u) }
+        events.each { |attrs| acta_seed_event(**attrs) }
+        Acta.rebuild!
       end
     end
   end
