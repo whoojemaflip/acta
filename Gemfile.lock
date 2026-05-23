@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    acta (0.3.2)
+    acta (0.4.0.alpha.1)
       activejob (>= 7.2)
       activemodel (>= 7.2)
       activerecord (>= 7.2)
