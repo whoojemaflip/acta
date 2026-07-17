@@ -99,4 +99,42 @@ module Acta
       )
     end
   end
+
+  # Raised by `context.fail_replay!(reason)` inside an upcaster block. Halts
+  # replay so the operator can investigate rather than land a partial,
+  # possibly-corrupt projection.
+  class ReplayHaltedByUpcaster < Error
+    attr_reader :record, :reason
+
+    def initialize(record:, reason:)
+      @record = record
+      @reason = reason
+      super(
+        "Upcaster halted replay on event id=#{record.id} uuid=#{record.uuid} " \
+        "(#{record.event_type} v#{record.event_version}): #{reason}"
+      )
+    end
+  end
+
+  # Raised at registration time when an upcaster set is malformed — e.g.
+  # `from` >= `to`, or two upcasters claim the same (event_type, from).
+  class UpcasterRegistryError < Error; end
+
+  # Raised when a record's stored event_version exceeds anything the
+  # currently-loaded upcaster registry knows how to reach. Typically means
+  # an older deployment is replaying events emitted by a newer one.
+  class FutureSchemaVersion < Error
+    attr_reader :record, :latest_known_version
+
+    def initialize(record:, latest_known_version:)
+      @record = record
+      @latest_known_version = latest_known_version
+      super(
+        "Event id=#{record.id} uuid=#{record.uuid} (#{record.event_type}) is at " \
+        "event_version #{record.event_version}, but the loaded upcaster registry " \
+        "only knows up to v#{latest_known_version}. Likely an older deployment " \
+        "replaying events emitted by a newer one."
+      )
+    end
+  end
 end

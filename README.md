@@ -21,6 +21,7 @@ What the library ships:
 | `Acta::Projection` | Sync + transactional + replayable (for ES aggregates) |
 | `Acta::Reactor` | After-commit + async via ActiveJob (for side effects) |
 | `Acta::Command` | Recommended write path with param validation & optimistic concurrency |
+| `Acta::Upcaster` | Replay-time transforms for events whose shape changed between schema versions |
 | `Acta::Testing` | RSpec matchers, given-when-then DSL, replay-determinism assertions |
 
 Adapters: SQLite and Postgres, both first-class.

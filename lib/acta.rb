@@ -17,6 +17,7 @@ require_relative "acta/projection"
 require_relative "acta/reactor"
 require_relative "acta/reactor_job"
 require_relative "acta/command"
+require_relative "acta/upcaster"
 require_relative "acta/projection_managed"
 require_relative "acta/railtie" if defined?(::Rails::Railtie)
 
@@ -155,12 +156,29 @@ module Acta
     projection_classes << klass unless projection_classes.include?(klass)
   end
 
+  # Register a set of upcasters (a module/class that `include Acta::Upcaster`
+  # and declares `upcasts(...)` blocks). Idempotent — re-registering the
+  # same class is a no-op. See `Acta::Upcaster`.
+  def self.register_upcaster(klass)
+    upcaster_registry.register(klass)
+  end
+
+  def self.upcaster_registry
+    @upcaster_registry ||= Upcaster::Registry.new
+  end
+
+  def self.reset_upcasters!
+    upcaster_registry.clear!
+  end
+
   def self.rebuild!
     Projection.applying! { truncate_projections! }
+    context = Upcaster::Context.new
     Record.order(:id).find_each do |record|
-      event = events.find_by_uuid(record.uuid)
-      dispatch(event, kind: :projection)
-    rescue ProjectionError
+      events.upcast_and_hydrate(record, context).each do |event|
+        dispatch(event, kind: :projection)
+      end
+    rescue ProjectionError, ReplayHaltedByUpcaster, FutureSchemaVersion
       raise
     rescue StandardError => e
       raise ReplayError.new(record:, original: e)

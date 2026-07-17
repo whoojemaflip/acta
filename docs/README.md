@@ -12,6 +12,11 @@ end-to-end code and the trade-offs that come with each choice.
   subscribers, no event sourcing. AR records remain the source of
   truth; the events table is a free audit log. Compares against AR
   callbacks and `ActiveSupport::Notifications`.
+- [**Schema evolution with upcasters**](upcasters.md) — transform
+  old-shape events into the current shape at replay time so
+  `Acta.rebuild!` stays faithful across migrations. Covers renames,
+  fan-outs, drops, stateful context, and the mid-deploy reactor
+  edge case.
 
 ## Patterns coming later
 
@@ -25,7 +30,3 @@ Recipes will land here when these are written or implemented:
 - **Process managers (saga)** — coordinating multi-step workflows
   where one event triggers a wait-then-act sequence. Primitive
   tracked in [#27](https://github.com/whoojemaflip/acta/issues/27).
-- **Schema evolution with upcasters** — adding, renaming, or
-  retiring event attributes without leaving stale rows
-  un-deserializable. Primitive tracked in
-  [#25](https://github.com/whoojemaflip/acta/issues/25).
