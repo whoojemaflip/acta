@@ -10,6 +10,17 @@ breaking changes as the API settles through real-world consumer integration.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-17
+
+Promotes `0.4.0.alpha.1` to stable with no code changes. The alpha's
+headline feature — `Acta::Upcaster`, replay-time event transformation
+for evolving schemas — held up through Scaff dogfooding; see the
+`0.4.0.alpha.1` entry below for the full details. Also rolls up the
+unreleased `0.3.1` (`Acta::EventsRecord` abstract base for connection
+routing) and `0.3.2` (`Acta.set_events_record_parent!` for pool
+sharing) changes, which shipped in the alpha but never as standalone
+gems.
+
 ## [0.4.0.alpha.1] — 2026-05-22
 
 Prerelease intended for Scaff dogfooding against real prod tenant
